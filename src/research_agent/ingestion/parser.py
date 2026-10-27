@@ -15,6 +15,9 @@ from pydantic import BaseModel, Field
 from research_agent.ingestion.tables import TableCell, extract_rows, render_table
 from research_agent.ingestion.text import NON_BREAKING_SPACE, SPACE, element_text, is_text_node
 
+# Bump when parser output changes; the manifest records it and a mismatch forces a re-ingest.
+PARSER_VERSION = "1"
+
 HTML_PARSER = "lxml"
 INLINE_XBRL_HEADER_TAG = "ix:header"
 INLINE_XBRL_PREFIX = "ix:"

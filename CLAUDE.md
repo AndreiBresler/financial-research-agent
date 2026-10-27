@@ -110,7 +110,7 @@ General:
 
 ## Repository structure
 
-Planned layout, from LLD §2, which lists every module. So far: `docs/`, `data/aapl-20250927.htm`, `pyproject.toml`, the requirements files and the phase 1 tests; no `src/` yet. The LLD names the root `financial-research-agent/`; here it is this directory.
+Planned layout, from LLD §2, which lists every module. So far: build steps 1–2 (parser, table cleanup, chunker, index, manifest, `src/ingest.py`), `config.py` and `models.py`, with their tests. The LLD names the root `financial-research-agent/`; here it is this directory.
 
 ```
 README.md                 setup, usage, design summary; answers the assignment's README questions
@@ -149,6 +149,7 @@ python src/main.py "question"     # one-shot; --verbose adds full tool outputs a
 python src/evaluate.py            # retrieval eval: hit@5 and not-found accuracy
 
 pytest                            # unit and graph tests; integration tests excluded by default
+pytest -m embedding_models        # real FastEmbed models and a full real-filing ingest (~80 MB download, ~5 min)
 pytest -m integration             # both required queries; needs real API keys and costs tokens
 ruff check . && ruff format --check . && mypy
 ```

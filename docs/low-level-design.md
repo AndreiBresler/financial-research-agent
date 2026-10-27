@@ -32,7 +32,7 @@ financial-research-agent/
 │       ├── models.py           Chunk, Evidence, Plan, Verification, Manifest
 │       ├── log.py              structlog setup, redaction, timing decorator
 │       ├── prompts.py          prompt loading and templating
-│       ├── ingestion/          parser.py · tables.py · text.py · chunker.py · indexer.py · manifest.py
+│       ├── ingestion/          parser.py · tables.py · text.py · chunker.py · embeddings.py · indexer.py · manifest.py · pipeline.py
 │       ├── retrieval/          store.py · index.py · search.py
 │       ├── tools/              search_10k.py · web_search.py · calculator.py
 │       ├── agent/              state.py · nodes.py · graph.py · verify.py · render.py
@@ -66,9 +66,10 @@ Versions are pinned in `requirements.txt`.
 class Settings(BaseSettings):                     # research_agent/config.py
     """All runtime configuration: environment variables and .env, validated at startup."""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    # Credentials: required, so a missing key fails at startup rather than mid-query.
-    anthropic_api_key: SecretStr
-    tavily_api_key: SecretStr
+    # Credentials: optional here, so ingestion runs without them; the agent checks
+    # missing_credentials() at startup and refuses to start rather than fail mid-query.
+    anthropic_api_key: SecretStr | None = None
+    tavily_api_key: SecretStr | None = None
     # Language model
     llm_model: str = "anthropic:claude-sonnet-5-5"
     llm_timeout_s: float = 60
@@ -99,12 +100,12 @@ class Settings(BaseSettings):                     # research_agent/config.py
 ```python
 class Chunk(BaseModel):                           # research_agent/models.py
     """One retrievable unit of the filing: a risk factor, a subsection part or a table."""
-    seq: int                       # global document order; citation ID is f"D{seq}"
+    seq: int                       # global document order from 1; citation ID is f"D{seq}"
     kind: Literal["text", "risk_factor", "table"]
     section_id: str                # stable section key: "item:1A", "item:7", "note:5"
     section_path: list[str]        # breadcrumb: ["Part II", "Item 7. ...", "Gross Margin"]
     unit: str                      # risk-factor title or subsection heading
-    position: int                  # 1-based order of the unit within its section
+    position: int                  # 1-based order of the unit within its section; parts of a split unit share it
     page_start: int                # printed page numbers, taken from the page footers
     page_end: int
     cross_refs: list[str]          # section_ids this chunk refers to
@@ -173,8 +174,8 @@ The chunker derives `Chunk.kind` from a block: `table` for tables, `risk_factor`
 5. **Risk factors.** Inside Item 1A, short bold, non-italic blocks are category headings (subsection headings from stage 4), and an italic block, bold or not, starts a new risk factor; it is normally one long sentence. The blocks after it belong to it, across page breaks, until the next risk factor, category heading or Item. Each member, the title included, gets `risk_factor` set to the title.
 6. **Tables.** Cleanup drops empty rows, merges `$` and `%` cells into the adjacent number, rejoins split negatives such as `(1,234` + `)`, then drops columns that are empty in every row. Values whose cells span columns differently from row to row (`$` + `112,887` in one row, a 2-column `82,314` in the next) land in one column. Merged values read `$112,887`, `46.9%`, `(1,234)` and `$(321)`; dashes for zero are kept. A *value cell* holds an amount, percentage or ratio; a bare year such as `2025` does not count, because 10-K tables use years as column headers. A table with at least 2 columns and a value cell is data; any other table is flattened to text (cells joined by spaces, rows by newlines), since EDGAR also uses tables for layout. Leading rows without value cells form the header, joined per column, so year rows stay in the header; a header cell spanning several columns applies to each of them, and a row with only a label (`Gross margin:`) ends the header. The output is Markdown.
 7. **Cross-references.** Regexes over text blocks (`Note (\d+)`, `Part ([IV]+), Item (\d+[A-C]?)`, `Item (\d+[A-C]?)`) map to section IDs. Only IDs of sections that exist in the document are kept, deduplicated in order of first mention, and references to the block's own section are dropped. Table and heading blocks are not scanned.
-8. **Chunks.** Blocks are grouped into units: one risk factor, or one subsection's paragraphs. A unit within `chunk_max_tokens` is one chunk. A larger unit is split with `RecursiveCharacterTextSplitter` (40-token overlap), using the embedding model's tokenizer as the length function. A table becomes its own chunk with the preceding paragraph of its section prepended; an oversized table is split by rows with the header repeated. The embedded text is the section path on one line, then the chunk text, and the token limit counts both.
-9. **Index.** Recreate the Qdrant collection with two named vectors: `dense` (384 dimensions, cosine) and `sparse` (IDF modifier, which BM25 needs). Embed in batches of 64 and upsert with point ID = `seq` and payload `section_id` and `kind`. Write `chunks.jsonl`, then `manifest.json` last: a build that crashes leaves no manifest, so the agent refuses to start.
+8. **Chunks** (`ingestion/chunker.py`). Blocks are grouped into units in document order: one risk factor, one subsection's consecutive paragraphs, or one table. Headings are not chunked, since their text is in `section_path`; a heading or a table ends the current text unit. A unit is named after its risk factor, or else the last element of its path, and numbered 1, 2, … within its section: every unit counts, so in Item 1A the intro paragraph is position 1 and the risk factors follow, and `search_10k` keeps only `risk_factor` chunks for "top N risk factors". A unit's blocks are joined by blank lines. A unit within `chunk_max_tokens` is one chunk. A larger unit is split with `RecursiveCharacterTextSplitter` (40-token overlap), using the embedding model's tokenizer as the length function; each part keeps the unit and position, and its pages and cross-references come from the blocks it covers. A table becomes its own chunk with the preceding paragraph of its own subsection prepended; an oversized table is split by rows, repeating that paragraph and the header in each part. The embedded text is the section path, joined with `›`, on one line, then the chunk text, and the token limit counts both. `seq` runs from 1 in document order.
+9. **Index** (`ingestion/indexer.py`). Recreate the Qdrant collection with two named vectors: `dense` (cosine, sized by the dense model: 384 for bge-small) and `sparse` (IDF modifier, which BM25 needs). Embed in batches of 64 and upsert with point ID = `seq` and payload `section_id` and `kind`. The model adapters (`FastEmbedDense`, `FastEmbedSparse`, `EmbeddingTokenCounter`) live in `ingestion/embeddings.py`, so retrieval reuses them to embed queries. `ingestion/pipeline.py` runs the stages: it first removes any existing manifest, then parses, chunks and indexes, writes `chunks.jsonl`, and writes `manifest.json` last (atomically): a build that crashes leaves no manifest, so the agent refuses to start. `src/ingest.py` only wires `Settings`, the models and the Qdrant client to it, and needs no API keys.
 ## 7. Retrieval and Tools
 
 **`ChunkStore`** loads `chunks.jsonl` into memory (a few hundred chunks) with lookups by `seq`, by section and by position. Structural queries, such as the first N units of a section or a cross-reference target, never touch the vector index.
@@ -294,7 +295,7 @@ def route_after_agent(state: AgentState) -> str:
 
 ## 10. CLI
 
-`python src/main.py` starts a REPL (`/new` starts a new thread, `/quit` exits); `python src/main.py "question"` answers once. `main.py` runs `asyncio.run(cli.main(argv))`, and the REPL reads each line with `await asyncio.to_thread(input, "> ")`, so waiting for input never blocks the event loop. At startup the CLI loads `Settings`, configures logging and checks the manifest: if it is missing, or its document hash or models differ from the configuration, it prints `python src/ingest.py` and exits with code 2; otherwise it loads the embedding models and `ChunkStore` once and builds the graph.
+`python src/main.py` starts a REPL (`/new` starts a new thread, `/quit` exits); `python src/main.py "question"` answers once. `main.py` runs `asyncio.run(cli.main(argv))`, and the REPL reads each line with `await asyncio.to_thread(input, "> ")`, so waiting for input never blocks the event loop. At startup the CLI loads `Settings`, configures logging and checks the manifest: if it is missing, or its document hash, parser version or models differ from the configuration (`stale_reasons` in `ingestion/manifest.py`), it prints the reasons and `python src/ingest.py` and exits with code 2; it also exits with code 2 when `missing_credentials()` names a key; otherwise it loads the embedding models and `ChunkStore` once and builds the graph.
 
 The CLI iterates `graph.astream(input, config, stream_mode="updates")` and prints each update as it arrives: the numbered plan, each requested tool call (e.g. `→ search_10k(section="item:1A", order_by="position", k=3)`), one line per tool result with its evidence IDs or error code, and the final answer rendered as Markdown with `rich`.
 
@@ -319,7 +320,8 @@ The CLI iterates `graph.astream(input, config, stream_mode="updates")` and print
 - **Graph (`tests/graph`):** `ScriptedChatModel`, a `GenericFakeChatModel` subclass whose `bind_tools` returns itself, replays prepared `AIMessage`s, including tool calls and the structured plan. Paths covered: a normal answer, a tool error followed by recovery, budget exhaustion, and a verification failure. One test checks that two tool calls in one step run concurrently: each fake tool sleeps 0.2 s, and the step must take under 0.3 s.
 - **Integration (`tests/test_queries.py`, marker `integration`, skipped without API keys):** both required queries. Asserts that the expected tools were called, that the key figures appear within a tolerance (R&D ≈ 8.3% of net sales; gross margin ≈ 46.9%), and that verification passed.
 - **Retrieval eval (`python src/evaluate.py`):** about 15 questions in `eval/retrieval_set.jsonl`, each with its expected `section_id`, plus 3 off-topic questions that must return not-found. Reports hit@5 and not-found accuracy, and is used to calibrate `min_dense_score` and `rrf_k`.
-- The default `pytest` run excludes integration tests (`addopts = "-m 'not integration'"`). `ruff check`, `ruff format --check` and `mypy` must pass.
+- **Embedding models (marker `embedding_models`, opt-in):** the real FastEmbed models and tokenizer (about 80 MB, downloaded on first run), and the whole pipeline on the real filing: every chunk within 400 model tokens, manifest and index agreeing, and the 46.9% gross margin table in the dense top 5. Other ingestion tests use fake embedders and an in-memory Qdrant.
+- The default `pytest` run excludes integration and embedding-model tests (`addopts = "-m 'not integration and not embedding_models'"`). `ruff check`, `ruff format --check` and `mypy` must pass.
 
 ## 13. Build Order
 

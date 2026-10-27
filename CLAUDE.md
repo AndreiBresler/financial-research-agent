@@ -110,7 +110,7 @@ General:
 
 ## Repository structure
 
-Planned layout, from LLD §2, which lists every module. So far: build steps 1–2 (parser, table cleanup, chunker, index, manifest, `src/ingest.py`), `config.py` and `models.py`, with their tests. The LLD names the root `financial-research-agent/`; here it is this directory.
+Planned layout, from LLD §2, which lists every module. So far: build steps 1–3 (parser, table cleanup, chunker, index, manifest, `src/ingest.py`; `ChunkStore`, hybrid search, `search_10k`, the retrieval eval and `src/evaluate.py`), `config.py` and `models.py`, with their tests. The LLD names the root `financial-research-agent/`; here it is this directory.
 
 ```
 README.md                 setup, usage, design summary; answers the assignment's README questions

@@ -30,7 +30,7 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 "tests/unit/test_tables.py" = ["E501"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["research_agent", "filing_support", "ingestion_fakes"]
+known-first-party = ["research_agent", "filing_support", "ingestion_fakes", "retrieval_fakes"]
 
 [tool.mypy]
 python_version = "3.12"

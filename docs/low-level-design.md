@@ -33,7 +33,7 @@ financial-research-agent/
 │       ├── log.py              structlog setup, redaction, timing decorator
 │       ├── prompts.py          prompt loading and templating
 │       ├── ingestion/          parser.py · tables.py · text.py · chunker.py · embeddings.py · indexer.py · manifest.py · pipeline.py
-│       ├── retrieval/          store.py · index.py · search.py
+│       ├── retrieval/          store.py · index.py · search.py · evaluation.py
 │       ├── tools/              search_10k.py · web_search.py · calculator.py
 │       ├── agent/              state.py · nodes.py · graph.py · verify.py · render.py
 │       └── cli.py              REPL, one-shot mode, streaming output
@@ -75,6 +75,7 @@ class Settings(BaseSettings):                     # research_agent/config.py
     llm_timeout_s: float = 60
     # Ingestion
     source_html: Path = Path("data/aapl-20250927.htm")
+    filing_label: str = "Form 10-K FY2025"   # names the filing in every 10-K source line
     index_dir: Path = Path("data/index")
     # Footer line that closes each page; group 1 is the printed page number.
     page_footer_pattern: str = r"^Apple Inc\. \| \d{4} Form 10-K \| (\d+)$"
@@ -85,7 +86,7 @@ class Settings(BaseSettings):                     # research_agent/config.py
     top_k: int = 6                         # default passages per search_10k call
     prefetch_limit: int = 20               # candidates per search before fusion
     rrf_k: int = 60                        # standard RRF constant; Qdrant defaults to 2
-    min_dense_score: float = 0.5           # cosine floor for "not found"; set by the eval
+    min_dense_score: float = 0.6           # cosine floor for "not found"; calibrated by the eval (§12)
     xref_max_extra: int = 3                # chunks added by cross-reference expansion
     # Tools and agent limits
     web_max_results: int = 5
@@ -115,7 +116,7 @@ class Evidence(BaseModel):
     """A citable source produced by a tool call."""
     id: str                        # "D137", "W3f9a1c", "C7b2e04"
     kind: Literal["doc", "web", "calc"]
-    source: str                    # the line rendered under Sources
+    source: str                    # the line rendered under Sources, without the [ID] marker
 
 class PlanStep(BaseModel):
     goal: str                      # what this step establishes
@@ -178,7 +179,7 @@ The chunker derives `Chunk.kind` from a block: `table` for tables, `risk_factor`
 9. **Index** (`ingestion/indexer.py`). Recreate the Qdrant collection with two named vectors: `dense` (cosine, sized by the dense model: 384 for bge-small) and `sparse` (IDF modifier, which BM25 needs). Embed in batches of 64 and upsert with point ID = `seq` and payload `section_id` and `kind`. The model adapters (`FastEmbedDense`, `FastEmbedSparse`, `EmbeddingTokenCounter`) live in `ingestion/embeddings.py`, so retrieval reuses them to embed queries. `ingestion/pipeline.py` runs the stages: it first removes any existing manifest, then parses, chunks and indexes, writes `chunks.jsonl`, and writes `manifest.json` last (atomically): a build that crashes leaves no manifest, so the agent refuses to start. `src/ingest.py` only wires `Settings`, the models and the Qdrant client to it, and needs no API keys.
 ## 7. Retrieval and Tools
 
-**`ChunkStore`** loads `chunks.jsonl` into memory (a few hundred chunks) with lookups by `seq`, by section and by position. Structural queries, such as the first N units of a section or a cross-reference target, never touch the vector index.
+**`ChunkStore`** (`retrieval/store.py`) loads `chunks.jsonl` into memory (a few hundred chunks) with lookups by `seq`, by section and by position. Structural queries, such as the first N units of a section or a cross-reference target, never touch the vector index. A section filter covers that section only, except `item:8`, which also covers every `note:N`: the notes have their own IDs so they can be searched and cross-referenced alone, but they are part of Item 8. `first_units(section, k, kind)` returns the first k units of that scope in document order, each with all its parts.
 
 **`Index`** wraps a single synchronous `QdrantClient(path=...)`; local mode allows one client per storage folder. Embedding and local search are in-process CPU work, so an async client would not help: `search_10k` awaits `asyncio.to_thread(search, ...)` instead. Concurrent calls share the client from worker threads, so each search holds a `threading.Lock`; searches take milliseconds, so the lock costs nothing noticeable. Fusion runs inside Qdrant, so the same code works against a Qdrant server.
 
@@ -214,13 +215,15 @@ def search(query: str, section: str | None, k: int) -> list[Chunk] | NotFound:
     return expand_xrefs(top, dense, cap=settings.xref_max_extra)
 ```
 
-`expand_xrefs` walks the results in rank order. For each referenced section not already present, it runs a dense query filtered to that section with the same query vector, and adds the best hit if it clears `min_dense_score`, until `cap` chunks are added. Added chunks are not expanded again: one hop.
+`expand_xrefs` walks the results in rank order. For each referenced section not already present, it runs a dense query filtered to that section with the same query vector, and adds the best hit if it clears `min_dense_score`, until `cap` chunks are added. Added chunks come after the ranked ones and are not expanded again: one hop.
 
-**Tools** are built by factories that close over their dependencies, for example `make_search_10k(store, index, settings)`, so tests inject fakes. Each is a `@tool` with a Pydantic `args_schema` and `response_format="content_and_artifact"`: it returns text for the model, plus a `list[Evidence]` artifact that the model never sees. Tool descriptions live in the docstrings, next to the contract they describe. `search_10k` and `web_search` are `async def`; `calculator` stays sync because it does no I/O, and `ToolNode` runs sync tools off the event loop.
+The snippet is illustrative. In code, `Searcher(store, index, SearchConfig)` holds the dependencies (`SearchConfig.from_settings` copies the four thresholds), `Index` (`retrieval/index.py`) embeds queries and runs the dense and hybrid queries under its lock, and `Searcher.best_dense_score` exposes the gate's score for the eval.
+
+**Tools** are built by factories that close over their dependencies, for example `make_search_10k(store, searcher, top_k, tool_output_max_chars, filing_label)`, so tests inject fakes. Each is a `@tool` with a Pydantic `args_schema` and `response_format="content_and_artifact"`: it returns text for the model, plus a `list[Evidence]` artifact that the model never sees. Tool descriptions live in the docstrings, next to the contract they describe. `search_10k` and `web_search` are `async def`; `calculator` stays sync because it does no I/O, and `ToolNode` runs sync tools off the event loop.
 
 | Tool | Arguments | Behavior | Errors returned to the model |
 |---|---|---|---|
-| `search_10k` | `query` (≤ 300 chars), `section` (e.g. `item:7`, `note:5`), `order_by` (`relevance` or `position`), `k` (1–10) | `relevance`: hybrid search plus cross-references. `position`: the first `k` units of `section` in document order; `section` is required. | `NO_RELEVANT_CONTENT in item:7: retry without the section filter`; an unknown section returns the list of valid IDs. |
+| `search_10k` | `query` (≤ 300 chars), `section` (e.g. `item:7`, `note:5`), `order_by` (`relevance` or `position`), `k` (1–10) | `k` defaults to `top_k`. `relevance`: hybrid search plus cross-references. `position`: the first `k` units of `section` in document order, with all parts of a split unit; in `item:1A` only risk factors, so "top N risk factors" skips the intro. `section` is required for `position`; `item:8` includes its notes. | `NO_RELEVANT_CONTENT in item:7: retry without the section filter` (or `NO_RELEVANT_CONTENT: …` without a filter); `ERROR unknown_section: …` with the list of valid IDs; `ERROR missing_section: …` for `position` without a section. |
 | `web_search` | `query` (≤ 300 chars) | `AsyncTavilyClient`, basic depth, `web_max_results` results, wrapped in `asyncio.timeout(web_timeout_s)`; each result's content capped at 1,500 chars. | `ERROR web_unavailable: <reason>. Answer from the 10-K and list this under Data gaps.` |
 | `calculator` | `expression` (≤ 200 chars) | `simpleeval` with no names; result rounded to 6 decimals. | `ERROR invalid_expression: <reason>` |
 
@@ -235,6 +238,8 @@ The model sees results in this format, capped at `tool_output_max_chars` per cal
 
 [C7b2e04] <expression> = <result>
 ```
+
+In 10-K paths, Item headings are shortened to `Item 7`; notes and subsections stay in full. A chunk spanning pages shows `(pp. 13–14)`. The matching Evidence source is `Form 10-K FY2025 › Part II › Item 7 › Gross Margin, p. 23` (the `filing_label` setting, then the same path and pages). When the cap is reached, whole trailing passages are dropped together with their Evidence, so every marker the model sees can be rendered.
 
 ## 8. Agent Graph
 
@@ -319,7 +324,7 @@ The CLI iterates `graph.astream(input, config, stream_mode="updates")` and print
 - **Unit (`tests/unit`):** every parser stage on `mini_10k.htm` (table of contents skipped, pages, sections, risk factors, table cleanup including year header rows, cross-references), including the traps found in the real filing: an empty italic span, a single italic word, short bold italic risk titles and an empty Item. Checks on the real filing, skipped when it is absent, assert that each standard Item is found once on the page its table of contents gives; that Parts I–IV and Notes 1–13 are each found once, the notes inside Item 8; that every block has a page, in order, and a section; that Item 1A splits into 27 risk factors under 5 categories; and that the rows behind the required queries render correctly (gross margin 46.9%, R&D $34,550 against net sales of $416,161). Then: chunk token limits and table splitting; hybrid search, the threshold and one-hop expansion on an in-memory Qdrant collection, which exercises the built-in fusion; calculator safety (`__import__`, attribute access and names rejected); web search with a mocked client, including a timeout; each verification rule; rendering.
 - **Graph (`tests/graph`):** `ScriptedChatModel`, a `GenericFakeChatModel` subclass whose `bind_tools` returns itself, replays prepared `AIMessage`s, including tool calls and the structured plan. Paths covered: a normal answer, a tool error followed by recovery, budget exhaustion, and a verification failure. One test checks that two tool calls in one step run concurrently: each fake tool sleeps 0.2 s, and the step must take under 0.3 s.
 - **Integration (`tests/test_queries.py`, marker `integration`, skipped without API keys):** both required queries. Asserts that the expected tools were called, that the key figures appear within a tolerance (R&D ≈ 8.3% of net sales; gross margin ≈ 46.9%), and that verification passed.
-- **Retrieval eval (`python src/evaluate.py`):** about 15 questions in `eval/retrieval_set.jsonl`, each with its expected `section_id`, plus 3 off-topic questions that must return not-found. Reports hit@5 and not-found accuracy, and is used to calibrate `min_dense_score` and `rrf_k`.
+- **Retrieval eval (`python src/evaluate.py`, logic in `retrieval/evaluation.py`):** 17 questions in `eval/retrieval_set.jsonl`, each listing every section that answers it (finding any one is a hit, since many facts appear in both Item 7 and the notes), plus 3 off-topic questions that must return not-found. Reports hit@5 over the ranked results only (cross-referenced extras don't count), not-found accuracy, and each question's best dense score, which is used to calibrate `min_dense_score` and `rrf_k`. Calibration on bge-small: off-topic questions scored up to 0.548 and on-topic ones from 0.682, so `min_dense_score` is 0.6; at `rrf_k` 60, hit@5 is 1.0 and not-found accuracy 1.0. Re-run after any parsing, chunking or embedding change.
 - **Embedding models (marker `embedding_models`, opt-in):** the real FastEmbed models and tokenizer (about 80 MB, downloaded on first run), and the whole pipeline on the real filing: every chunk within 400 model tokens, manifest and index agreeing, and the 46.9% gross margin table in the dense top 5. Other ingestion tests use fake embedders and an in-memory Qdrant.
 - The default `pytest` run excludes integration and embedding-model tests (`addopts = "-m 'not integration and not embedding_models'"`). `ruff check`, `ruff format --check` and `mypy` must pass.
 

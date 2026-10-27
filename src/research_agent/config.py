@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 60
     # Ingestion
     source_html: Path = Path("data/aapl-20250927.htm")
+    filing_label: str = "Form 10-K FY2025"  # names the filing in every 10-K source line
     index_dir: Path = Path("data/index")
     # Footer line that closes each page; group 1 is the printed page number.
     page_footer_pattern: str = r"^Apple Inc\. \| \d{4} Form 10-K \| (\d+)$"
@@ -34,7 +35,7 @@ class Settings(BaseSettings):
     top_k: int = 6
     prefetch_limit: int = 20
     rrf_k: int = 60  # standard RRF constant; Qdrant defaults to 2
-    min_dense_score: float = 0.5  # cosine floor for "not found"; set by the eval
+    min_dense_score: float = 0.6  # "not found" floor; eval: off-topic <= 0.55, on-topic >= 0.68
     xref_max_extra: int = 3
     # Tools and agent limits
     web_max_results: int = 5

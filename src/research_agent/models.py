@@ -30,3 +30,11 @@ class Manifest(BaseModel):
     sparse_model: str
     chunk_count: int
     built_at: datetime
+
+
+class Evidence(BaseModel):
+    """A citable source produced by a tool call; the renderer prints its source line under Sources."""
+
+    id: str  # "D137", "W3f9a1c", "C7b2e04"
+    kind: Literal["doc", "web", "calc"]
+    source: str  # the line rendered under Sources, without the [ID] marker

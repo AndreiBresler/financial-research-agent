@@ -5,12 +5,14 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+ChunkKind = Literal["text", "risk_factor", "table"]
+
 
 class Chunk(BaseModel):
     """One retrievable unit of the filing: a risk factor, a subsection part or a table."""
 
     seq: int  # global document order, from 1; citation ID is f"D{seq}"
-    kind: Literal["text", "risk_factor", "table"]
+    kind: ChunkKind
     section_id: str  # stable section key: "item:1A", "item:7", "note:5"
     section_path: list[str]  # breadcrumb: ["Part II", "Item 7. ...", "Gross Margin"]
     unit: str  # risk-factor title or subsection heading

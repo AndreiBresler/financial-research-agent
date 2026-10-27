@@ -153,6 +153,30 @@ class TestCrossReferences:
         assert len(result) == len(set(result))
 
 
+class TestKindFilter:
+    """A kind filter narrows results to tables, risk factors or narrative text."""
+
+    def test_returns_only_the_requested_kind(self, plain_searcher: Searcher) -> None:
+        """A table search over the whole filing returns tables only, led by the revenue table."""
+        chunks = found(plain_searcher.search("revenue", None, 3, kind="table"))
+        assert {chunk.kind for chunk in chunks} == {"table"}
+        assert chunks[0].seq == 8
+
+    def test_combines_with_the_section_filter(self, plain_searcher: Searcher) -> None:
+        """Section and kind filters apply together: text in Item 8 skips the revenue table for Note 2."""
+        assert sequence_numbers(plain_searcher.search("revenue", "item:8", 1, kind="text")) == [9]
+
+    def test_gate_applies_within_the_kind(self, plain_searcher: Searcher) -> None:
+        """Tax content exists, but no tax table, so a table search misses and names the kind."""
+        result = plain_searcher.search("tax", None, 3, kind="table")
+        assert result == NotFound(section=None, kind="table")
+        assert plain_searcher.best_dense_score("tax", None, kind="table") == pytest.approx(0.0)
+
+    def test_cross_references_keep_the_kind(self, searcher: Searcher) -> None:
+        """The tax risk refers to two notes, but they hold text, so a risk-factor search adds nothing."""
+        assert sequence_numbers(searcher.search("tax rates", "item:1A", 1, kind="risk_factor")) == [4]
+
+
 def test_concurrent_searches_share_the_index_safely(plain_searcher: Searcher) -> None:
     """Searches from several worker threads, as concurrent tool calls make, all return the same result."""
     with ThreadPoolExecutor(max_workers=CONCURRENT_SEARCHES) as executor:

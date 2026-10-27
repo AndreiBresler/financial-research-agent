@@ -3,12 +3,10 @@
 Searches are synchronous CPU work; search_10k runs them in a worker thread.
 """
 
-from dataclasses import dataclass
-
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from research_agent.config import Settings
-from research_agent.models import Chunk
+from research_agent.models import Chunk, ChunkKind
 from research_agent.retrieval.index import Index, QueryVectors
 from research_agent.retrieval.store import ChunkStore
 
@@ -17,14 +15,16 @@ NO_MATCH_SCORE = 0.0
 
 
 class NotFound(BaseModel):
-    """No passage cleared the relevance threshold; section is the filter that was searched, if any."""
+    """No passage cleared the relevance threshold; section and kind are the filters that were searched, if any."""
 
     section: str | None
+    kind: ChunkKind | None = None
 
 
-@dataclass(frozen=True)
-class SearchConfig:
+class SearchConfig(BaseModel):
     """The thresholds search needs, taken from Settings."""
+
+    model_config = ConfigDict(frozen=True)
 
     min_dense_score: float
     prefetch_limit: int
@@ -57,33 +57,36 @@ class Searcher:
             return None
         return self.store.section_scope(section)
 
-    def best_score(self, vectors: QueryVectors, section_ids: list[str] | None) -> float:
-        """Return the best raw dense score within the sections, or 0 when there is nothing to match."""
-        best_matches = self.index.best_dense(vectors, section_ids, BEST_MATCH_LIMIT)
+    def best_score(self, vectors: QueryVectors, section_ids: list[str] | None, kind: ChunkKind | None) -> float:
+        """Return the best raw dense score within the filters, or 0 when there is nothing to match."""
+        best_matches = self.index.best_dense(vectors, section_ids, kind, BEST_MATCH_LIMIT)
         if not best_matches:
             return NO_MATCH_SCORE
         return best_matches[0].score
 
-    def best_dense_score(self, query: str, section: str | None) -> float:
+    def best_dense_score(self, query: str, section: str | None, kind: ChunkKind | None = None) -> float:
         """Return the best raw dense score for a query; the eval uses it to calibrate the threshold."""
         vectors = self.index.embed_query(query)
         section_ids = self.scope(section)
-        return self.best_score(vectors, section_ids)
+        return self.best_score(vectors, section_ids, kind)
 
-    def search(self, query: str, section: str | None, k: int) -> list[Chunk] | NotFound:
+    def search(self, query: str, section: str | None, k: int, kind: ChunkKind | None = None) -> list[Chunk] | NotFound:
         """Return the k best passages plus cross-referenced ones, or NotFound when nothing is relevant enough."""
         vectors = self.index.embed_query(query)
         section_ids = self.scope(section)
         # RRF scores are rank-based and can't tell a weak match from a strong one, so the gate uses the raw cosine.
-        best = self.best_score(vectors, section_ids)
+        best = self.best_score(vectors, section_ids, kind)
         if best < self.config.min_dense_score:
-            return NotFound(section=section)
-        ranked_seqs = self.index.hybrid(vectors, section_ids, self.config.prefetch_limit, self.config.rrf_k, k)
+            return NotFound(section=section, kind=kind)
+        ranked_seqs = self.index.hybrid(vectors, section_ids, kind, self.config.prefetch_limit, self.config.rrf_k, k)
         ranked = [self.store.get(seq) for seq in ranked_seqs]
-        return self.expand_cross_refs(ranked, vectors)
+        return self.expand_cross_refs(ranked, vectors, kind)
 
-    def expand_cross_refs(self, ranked: list[Chunk], vectors: QueryVectors) -> list[Chunk]:
-        """Add the best relevant passage of each section the ranked passages refer to, one hop, up to the cap."""
+    def expand_cross_refs(self, ranked: list[Chunk], vectors: QueryVectors, kind: ChunkKind | None) -> list[Chunk]:
+        """Add the best relevant passage of each section the ranked passages refer to, one hop, up to the cap.
+
+        A kind filter applies here too: a search for tables only ever adds tables.
+        """
         results = list(ranked)
         present_seqs = {chunk.seq for chunk in ranked}
         visited_sections = {chunk.section_id for chunk in ranked}
@@ -96,7 +99,7 @@ class Searcher:
                     continue
                 visited_sections.add(reference)
                 reference_scope = self.store.section_scope(reference)
-                matches = self.index.best_dense(vectors, reference_scope, BEST_MATCH_LIMIT)
+                matches = self.index.best_dense(vectors, reference_scope, kind, BEST_MATCH_LIMIT)
                 if not matches:
                     continue
                 best_match = matches[0]

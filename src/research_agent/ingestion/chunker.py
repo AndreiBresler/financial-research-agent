@@ -3,15 +3,13 @@
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from research_agent.ingestion.parser import HEADING_KIND, TABLE_KIND, Block
-from research_agent.models import Chunk
+from research_agent.models import Chunk, ChunkKind
 
 TokenCounter = Callable[[str], int]
-ChunkKind = Literal["text", "risk_factor", "table"]
 
 PATH_SEPARATOR = " › "
 PATH_LINE_TERMINATOR = "\n"

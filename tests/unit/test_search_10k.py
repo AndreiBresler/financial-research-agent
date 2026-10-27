@@ -75,10 +75,10 @@ class TestDefinition:
     """What the model is told about the tool."""
 
     def test_name_schema_and_async(self, tool: BaseTool) -> None:
-        """The tool is called search_10k, takes query, section, order_by and k, and runs asynchronously."""
+        """The tool is called search_10k, takes query, section, order_by, k and kind, and runs asynchronously."""
         schema_fields = set(SearchTenKArguments.model_fields)
         assert tool.name == TOOL_NAME
-        assert schema_fields == {"query", "section", "order_by", "k"}
+        assert schema_fields == {"query", "section", "order_by", "k", "kind"}
         assert tool.description
         assert tool.coroutine is not None
 
@@ -90,10 +90,11 @@ class TestDefinition:
             {"query": "tax", "k": 0},
             {"query": "tax", "k": 11},
             {"query": "tax", "order_by": "random"},
+            {"query": "tax", "kind": "chart"},
         ],
     )
     def test_schema_rejects_bad_arguments(self, arguments: dict[str, object]) -> None:
-        """Queries are 1-300 characters, k is 1-10, and order_by is relevance or position."""
+        """Queries are 1-300 characters, k is 1-10, order_by is relevance or position, kind a chunk kind."""
         with pytest.raises(ValidationError):
             SearchTenKArguments.model_validate(arguments)
 
@@ -158,6 +159,39 @@ class TestPosition:
         message = await call(tool, query="risk factors", order_by="position")
         assert str(message.content).startswith(MISSING_SECTION)
         assert evidence_of(message) == []
+
+
+class TestKind:
+    """The kind argument narrows results to tables, risk factors or narrative text."""
+
+    async def test_table_search_returns_tables_only(self, tool: BaseTool) -> None:
+        """'Find the figures' as a table search returns the revenue table first and no narrative."""
+        message = await call(tool, query="revenue", kind="table")
+        message_markers = markers(message)
+        assert message_markers[0] == "D8"
+        assert set(message_markers) <= {"D7", "D8"}
+
+    async def test_position_with_a_kind_overrides_the_risk_factor_default(self, tool: BaseTool) -> None:
+        """Asking Item 1A for text by position returns its intro instead of the risk factors."""
+        message = await call(tool, query="intro", section="item:1A", order_by="position", kind="text")
+        assert markers(message) == ["D2"]
+
+    async def test_position_with_a_kind_outside_item_1a(self, tool: BaseTool) -> None:
+        """Item 8's tables in document order: the statement table, not the notes' text."""
+        message = await call(tool, query="statements", section="item:8", order_by="position", kind="table")
+        assert markers(message) == ["D8"]
+
+    async def test_miss_with_a_kind_suggests_dropping_it(self, tool: BaseTool) -> None:
+        """No tax table exists, so the model is told to retry without the kind filter."""
+        message = await call(tool, query="tax", kind="table")
+        assert str(message.content) == f"{NO_RELEVANT_CONTENT} for kind table: retry without the kind filter"
+        assert evidence_of(message) == []
+
+    async def test_miss_with_section_and_kind_names_both(self, tool: BaseTool) -> None:
+        """With both filters set, the retry advice names both."""
+        message = await call(tool, query="tax rates", section="item:1A", kind="table")
+        expected = f"{NO_RELEVANT_CONTENT} in item:1A for kind table: retry without the section or kind filter"
+        assert str(message.content) == expected
 
 
 class TestErrors:

@@ -11,7 +11,7 @@ from typing import Literal
 from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel, Field
 
-from research_agent.models import Chunk, Evidence
+from research_agent.models import Chunk, ChunkKind, Evidence
 from research_agent.retrieval.search import NotFound, Searcher
 from research_agent.retrieval.store import ChunkStore
 
@@ -27,7 +27,8 @@ OrderBy = Literal["relevance", "position"]
 RELEVANCE_ORDER: OrderBy = "relevance"
 POSITION_ORDER: OrderBy = "position"
 RISK_FACTORS_SECTION = "item:1A"
-RISK_FACTOR_KIND = "risk_factor"
+RISK_FACTOR_KIND: ChunkKind = "risk_factor"
+FILTER_NAME_SEPARATOR = " or "
 DOC_EVIDENCE_KIND: Literal["doc"] = "doc"
 DOC_ID_PREFIX = "D"
 
@@ -53,6 +54,10 @@ class SearchTenKArguments(BaseModel):
         "(in item:1A, the first k risk factors); needs a section.",
     )
     k: int | None = Field(default=None, ge=MIN_K, le=MAX_K, description="How many passages or units to return.")
+    kind: ChunkKind | None = Field(
+        default=None,
+        description="Optional chunk type: table for reported figures, risk_factor, or text for narrative.",
+    )
 
 
 def display_path(section_path: list[str]) -> str:
@@ -112,11 +117,21 @@ def render(chunks: list[Chunk], filing_label: str, max_chars: int) -> tuple[str,
     return content, shown_evidence
 
 
-def not_found_message(section: str | None) -> str:
-    """Tell the model nothing relevant was found, and what to do next."""
+def not_found_message(section: str | None, kind: ChunkKind | None) -> str:
+    """Tell the model nothing relevant was found, and which filter to drop, if any."""
+    if section is None and kind is None:
+        return f"{NO_RELEVANT_CONTENT}: the 10-K has no passage relevant to this query; list it under Data gaps"
+    scope_parts: list[str] = []
+    filter_names: list[str] = []
     if section is not None:
-        return f"{NO_RELEVANT_CONTENT} in {section}: retry without the section filter"
-    return f"{NO_RELEVANT_CONTENT}: the 10-K has no passage relevant to this query; list it under Data gaps"
+        scope_parts.append(f"in {section}")
+        filter_names.append("section")
+    if kind is not None:
+        scope_parts.append(f"for kind {kind}")
+        filter_names.append("kind")
+    scope = " ".join(scope_parts)
+    filters = FILTER_NAME_SEPARATOR.join(filter_names)
+    return f"{NO_RELEVANT_CONTENT} {scope}: retry without the {filters} filter"
 
 
 def make_search_10k(
@@ -134,6 +149,7 @@ def make_search_10k(
         section: str | None = None,
         order_by: OrderBy = RELEVANCE_ORDER,
         k: int | None = None,
+        kind: ChunkKind | None = None,
     ) -> tuple[str, list[Evidence]]:
         """Search Apple's fiscal 2025 Form 10-K and return cited passages, not an answer.
 
@@ -141,7 +157,8 @@ def make_search_10k(
         with a citation marker such as [D137]; cite facts with exactly those markers. relevance returns the best
         matches for the query, plus passages from sections they cross-reference. position returns the first k
         units of a section in document order; in item:1A these are the risk factors in the order the filing
-        lists them. Tables come as Markdown, with figures in the filing's units (mostly millions of dollars).
+        lists them. kind narrows results to tables, risk factors or narrative text; use table for reported
+        figures. Tables come as Markdown, with figures in the filing's units (mostly millions of dollars).
         """
         count = k or top_k
         if order_by == POSITION_ORDER and section is None:
@@ -150,16 +167,19 @@ def make_search_10k(
             valid_sections = SECTION_LIST_SEPARATOR.join(store.section_ids())
             return f"{UNKNOWN_SECTION}: {section}. Valid sections: {valid_sections}", []
         if order_by == POSITION_ORDER and section is not None:
-            kind = RISK_FACTOR_KIND if section == RISK_FACTORS_SECTION else None
-            units = store.first_units(section, count, kind)
+            # "Top N risk factors" means risk factors, so Item 1A skips its intro unless a kind is given.
+            unit_kind = kind
+            if unit_kind is None and section == RISK_FACTORS_SECTION:
+                unit_kind = RISK_FACTOR_KIND
+            units = store.first_units(section, count, unit_kind)
             chunks = [chunk for unit in units for chunk in unit]
         else:
-            result = await asyncio.to_thread(searcher.search, query, section, count)
+            result = await asyncio.to_thread(searcher.search, query, section, count, kind)
             if isinstance(result, NotFound):
-                return not_found_message(result.section), []
+                return not_found_message(result.section, result.kind), []
             chunks = result
         if not chunks:
-            return not_found_message(section), []
+            return not_found_message(section, kind), []
         return render(chunks, filing_label, tool_output_max_chars)
 
     return search_10k

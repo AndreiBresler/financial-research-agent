@@ -13,7 +13,8 @@ A command-line research agent that answers questions about Apple Inc. from its f
 Reference docs:
 - `docs/high-level-design.md` — scope and assumptions, architecture, agent loop, information flow for the required queries, 10-K handling, reliability and security, demo → production, requirements traceability.
 - `docs/low-level-design.md` — implements the HLD: conventions, layout, dependency decisions, `Settings`, data models, ingestion stages, retrieval and tool contracts, graph, verification, CLI, errors, tests, build order.
-- `STATUS.md`, `TODO.md` — not created yet; see "Project status".
+- `STATUS.md`: what's built vs. designed-but-not-implemented, by build step. Check it before assuming a component doesn't exist yet.
+- `TODO.md`: open action items, known issues and optional cleanups.
 
 ## Tech stack
 
@@ -110,7 +111,7 @@ General:
 
 ## Repository structure
 
-Planned layout, from LLD §2, which lists every module. So far: build steps 1–3 (parser, table cleanup, chunker, index, manifest, `src/ingest.py`; `ChunkStore`, hybrid search, `search_10k`, the retrieval eval and `src/evaluate.py`), `config.py` and `models.py`, with their tests. The LLD names the root `financial-research-agent/`; here it is this directory.
+Planned layout, from LLD §2, which lists every module; `STATUS.md` says which parts exist so far. The LLD names the root `financial-research-agent/`; here it is this directory.
 
 ```
 README.md                 setup, usage, design summary; answers the assignment's README questions
@@ -158,7 +159,7 @@ Exit codes: 0 success, 1 runtime error, 2 index missing or stale (the CLI prints
 
 ## Project status
 
-Implementation follows the build order in LLD §13, each step a checkpoint. When it starts, create `STATUS.md` (what's built vs. designed-but-not-implemented, keyed to those steps) and `TODO.md` (open action items), proposing them first. Until they exist, check the tree rather than assuming anything beyond `docs/` is built. Status stays out of this file: it changes often, and this file shouldn't.
+Implementation follows the build order in LLD §13, each step a checkpoint. See `STATUS.md` for what's built and `TODO.md` for open items. Status stays out of this file: it changes often, and this file shouldn't.
 
 Done means: both required queries pass the integration tests (R&D ≈ 8.3% of net sales, gross margin ≈ 46.9%, citations verified); `ruff check`, `ruff format --check`, `mypy` and `pytest` are clean; and the README answers the assignment's README questions (tool registration, tool choice, information flow, prompt location; HLD §9).
 

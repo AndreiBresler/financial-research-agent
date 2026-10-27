@@ -32,7 +32,7 @@ financial-research-agent/
 │       ├── models.py           Chunk, Evidence, Plan, Verification, Manifest
 │       ├── log.py              structlog setup, redaction, timing decorator
 │       ├── prompts.py          prompt loading and templating
-│       ├── ingestion/          parser.py · tables.py · chunker.py · indexer.py · manifest.py
+│       ├── ingestion/          parser.py · tables.py · text.py · chunker.py · indexer.py · manifest.py
 │       ├── retrieval/          store.py · index.py · search.py
 │       ├── tools/              search_10k.py · web_search.py · calculator.py
 │       ├── agent/              state.py · nodes.py · graph.py · verify.py · render.py
@@ -147,7 +147,7 @@ class AgentState(TypedDict):                      # research_agent/agent/state.p
 
 `python src/ingest.py` runs these stages in order. Each stage is a pure function over the previous stage's output, so each is unit-tested on its own. Ingestion is a batch job and stays synchronous.
 
-Stages 1–7 live in `ingestion/parser.py` (`clean`, `linearize`, `assign_pages`, `assign_sections`, `split_risk_factors`, `convert_tables`, `resolve_cross_refs`; `parse_filing(html, page_footer_pattern)` runs them all), with table cleanup in `ingestion/tables.py` (`TableCell`, `extract_rows`, `render_table`). They pass a list of blocks:
+Stages 1–7 live in `ingestion/parser.py` (`clean`, `linearize`, `assign_pages`, `assign_sections`, `split_risk_factors`, `convert_tables`, `resolve_cross_refs`; `parse_filing(html, page_footer_pattern)` runs them all), with table cleanup in `ingestion/tables.py` (`TableCell`, `extract_rows`, `render_table`) and the text extraction both share in `ingestion/text.py`. They pass a list of blocks:
 
 ```python
 class Block(BaseModel):                           # research_agent/ingestion/parser.py

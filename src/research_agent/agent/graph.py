@@ -3,6 +3,8 @@
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.tools import BaseTool
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
@@ -12,8 +14,21 @@ from research_agent.agent.nodes import AGENT_NODE, PLAN_NODE, TOOLS_NODE, VERIFY
 from research_agent.agent.state import AgentState
 from research_agent.agent.verify import verify_node
 from research_agent.config import Settings
+from research_agent.models import Plan, PlanStep
 from research_agent.prompts import Prompts
 from research_agent.retrieval.store import ChunkStore
+
+AgentGraph = CompiledStateGraph[AgentState, None, AgentState, AgentState]
+
+# State models restored from checkpoints; LangGraph blocks unregistered types.
+CHECKPOINT_MODELS = (Plan, PlanStep)
+
+
+def build_checkpointer() -> InMemorySaver:
+    """Return the in-memory thread store, allowed to restore our state models from its checkpoints."""
+    allowed_models = [(model.__module__, model.__name__) for model in CHECKPOINT_MODELS]
+    serializer = JsonPlusSerializer(allowed_msgpack_modules=allowed_models)
+    return InMemorySaver(serde=serializer)
 
 
 def route_after_agent(state: AgentState) -> str:
@@ -31,7 +46,7 @@ def build_graph(
     prompts: Prompts,
     settings: Settings,
     checkpointer: Checkpointer = None,
-) -> CompiledStateGraph[AgentState, None, AgentState, AgentState]:
+) -> AgentGraph:
     """Assemble the agent graph: plan → agent ⇄ tools → verify (HLD section 4)."""
     graph_builder = StateGraph(AgentState)
     graph_builder.add_node(PLAN_NODE, PlanNode(llm, store, prompts))

@@ -1,6 +1,6 @@
 # Financial Research Agent — Low-Level Design
 
-**Author:** Andrei Bresler · **Version:** 1.4 · **Date:** 2026-10-29 · **Status:** Draft · **Implements:** HLD v1.4
+**Author:** Andrei Bresler · **Version:** 1.8 · **Date:** 2026-10-29 · **Status:** Draft · **Implements:** HLD v1.4
 
 ## 1. Conventions
 
@@ -49,7 +49,7 @@ Versions are pinned in `requirements.txt`.
 | Package | Used for | Decision |
 |---|---|---|
 | `langgraph` | `StateGraph`, `ToolNode`, `InMemorySaver` | Custom graph, no prebuilt agent. |
-| `langchain`, `langchain-anthropic`, `langchain-core` | `init_chat_model` → `ChatAnthropic`; messages, `@tool`, fake chat models | `temperature=0`, `max_retries=3`, timeout `llm_timeout_s`. Tools return content plus an artifact (§7). |
+| `langchain`, `langchain-anthropic`, `langchain-core` | `init_chat_model` → `ChatAnthropic`; messages, `@tool`, fake chat models | `max_retries=3`, timeout `llm_timeout_s`; no `temperature`, since Claude Sonnet 5.5 rejects non-default sampling values. Tools return content plus an artifact (§7). |
 | `langchain-text-splitters`, `tokenizers` | splitting oversized sections | Length counted with the embedding model's tokenizer; `tokenizers` ships with FastEmbed. |
 | `beautifulsoup4` + `lxml` | 10-K parsing | lxml backend for speed. |
 | `fastembed` | dense `bge-small-en-v1.5`, sparse `Qdrant/bm25` | Local ONNX on CPU; no GPU or API key. |
@@ -134,6 +134,7 @@ class Verification(BaseModel):
     unknown_ids: list[str] = []    # markers that match no evidence in the thread
     uncited: list[str] = []        # paragraphs or sentences without a marker
     has_urls: bool = False         # the model wrote a URL instead of citing a marker
+    passed: bool                   # property: no unknown IDs, nothing uncited, no URLs
 
 class AgentState(TypedDict):                      # research_agent/agent/state.py
     messages: Annotated[list[AnyMessage], add_messages]   # appended across the thread
@@ -268,7 +269,7 @@ def build_graph(llm: BaseChatModel, tools: list[BaseTool], store: ChunkStore,
     g.add_conditional_edges("agent", route_after_agent, ["tools", "verify"])
     g.add_edge("tools", "agent")
     g.add_edge("verify", END)
-    return g.compile(checkpointer=checkpointer)
+    return g.compile(checkpointer=checkpointer)   # build_checkpointer(): InMemorySaver allowed to restore Plan
 
 def route_after_agent(state: AgentState) -> str:
     """Route to tools while the model requests them; otherwise verify the answer."""
@@ -277,10 +278,11 @@ def route_after_agent(state: AgentState) -> str:
 ```
 
 - **Per-question input:** `question_input(q)` in `agent/state.py` returns `{"messages": [HumanMessage(q)], "plan": None, "tool_rounds": 0, "final": None}`, the one place that lists the per-question fields. This resets the per-question fields, while `messages` keeps accumulating in the thread. The config sets `thread_id` (one per REPL session) and `recursion_limit=25` as a hard backstop; six tool rounds use 15 steps.
-- **plan:** `llm.with_structured_output(Plan)` with `planner.txt` and the list of section IDs; returns `{"plan": plan}`.
-- **agent:** the system prompt is `system.txt` plus `examples.txt`, filled with the section list, the plan and the remaining tool rounds. While `tool_rounds < max_tool_rounds`, it calls `llm.bind_tools(tools)` and adds 1 to `tool_rounds` when the reply contains tool calls. At the limit, it calls the model without tools on a flattened input: the system prompt (0 rounds left) and `final.txt` filled with the question and the gathered tool outputs as plain text, so the request carries no tool-call blocks. `final.txt` instructs the model to answer now and list what's missing under `### Data gaps`.
+- **plan:** `llm.with_structured_output(Plan, method="json_schema")`, Claude's native structured output (Claude Sonnet 5.5 rejects the forced tool call LangChain uses by default), with `planner.txt` and the list of section IDs; returns `{"plan": plan}`.
+- **agent:** the system prompt is `system.txt` plus `examples.txt`, filled with the section list, the plan and the fixed tool budget (`max_tool_rounds`), so it is identical on every round of a question. While `tool_rounds < max_tool_rounds`, it calls `llm.bind_tools(tools)` and adds 1 to `tool_rounds` when the reply contains tool calls. At the limit, it calls the model without tools on a flattened input: the same system prompt and `final.txt` filled with the question and the gathered tool outputs as plain text, so the request carries no tool-call blocks. `final.txt` instructs the model to answer now and list what's missing under `### Data gaps`.
 - **Model input:** the whole current turn, plus only the human and final AI messages of earlier turns. Old tool output stays in state for citations but is not resent.
-- **Prompts:** `Prompts(prompts_dir)` in `prompts.py` loads the four files once, at startup, and is injected into the nodes. It fills placeholders with `string.Template` `substitute`: `planner.txt` gets `$sections`; `system.txt` and `examples.txt` get `$sections`, `$plan` and `$rounds_left`; `final.txt` gets `$question` and `$tool_results`. Braces need no escaping; literal dollars are written `$$`. Loading fails, naming the file, on a missing file, an invalid `$`, or a placeholder the file doesn't get.
+- **Thinking blocks:** Claude Sonnet 5.5 thinks by default and binds each thinking block to the system prompt and history that produced it; on accounts created from 2026-08-31, replaying a block after that prefix changes is a 400. So the history within a question is append-only (the system prompt never changes between rounds), and earlier turns, resent without their tool calls, are resent without their thinking blocks too. Dropping thinking blocks from the start of the history is allowed; editing the history under a block is not.
+- **Prompts:** `Prompts(prompts_dir)` in `prompts.py` loads the four files once, at startup, and is injected into the nodes. It fills placeholders with `string.Template` `substitute`: `planner.txt` gets `$sections`; `system.txt` and `examples.txt` get `$sections`, `$plan` and `$max_tool_rounds`; `final.txt` gets `$question` and `$tool_results`. Braces need no escaping; literal dollars are written `$$`. Loading fails, naming the file, on a missing file, an invalid `$`, or a placeholder the file doesn't get.
 
 `system.txt` holds these rules:
 1. Facts and numbers come only from tool results in this conversation; every derived number comes from `calculator`.
@@ -297,17 +299,17 @@ def route_after_agent(state: AgentState) -> str:
 | Check | Rule |
 |---|---|
 | Known IDs | Every marker matching `\[([DWC][0-9a-f]{1,8})\]` is in the registry. |
-| Paragraph coverage | Every paragraph and list item has a marker; headings and lead-in lines ending in `:` are exempt. |
-| Number coverage | Every sentence that contains a digit has a marker. |
+| Paragraph coverage | Every paragraph, list item and table row has a marker; headings (including a line that is only bold text), lead-in lines ending in `:` (bold or not), a table's header row and its separator are exempt. List items under a lead-in that has a marker inherit it (nested items under a list-item lead-in, or the list right below a plain-line lead-in). An uncited unit is reported once. |
+| Number coverage | Every sentence that contains a digit is followed by a marker within its paragraph, list item or table row: a marker may close a run of sentences, but a figure after the unit's last marker is uncited. Digits inside markers and standalone years (`fiscal 2025`) don't count, and a marker written after the full stop belongs to the sentence before it. |
 | No URLs | The body contains no `http(s)://`; sources are rendered by code. |
 
-`render` appends `### Sources`: one line per cited ID in order of first use, taken from `Evidence.source`, for example `[D137] Form 10-K FY2025 › Part II › Item 7 › Gross Margin, p. 23`. If any check failed, it puts a warning at the top listing up to five issues. The result is stored in `final`.
+Evidence restored from a checkpoint arrives as dicts, so the registry validates each item into `Evidence`. `render` appends `### Sources`: one Markdown list item per cited ID, in order of first use anywhere in the answer, taken from `Evidence.source`, for example `- [D137] Form 10-K FY2025 › Part II › Item 7 › Gross Margin, p. 23`; unknown IDs get no line, and an answer citing nothing gets no Sources heading. If any check failed, it puts a Markdown blockquote warning at the top listing up to five issues, then "…and N more". The result is stored in `final`.
 
 ## 10. CLI
 
-`python src/main.py` starts a REPL (`/new` starts a new thread, `/quit` exits); `python src/main.py "question"` answers once. `main.py` runs `asyncio.run(cli.main(argv))`, and the REPL reads each line with `await asyncio.to_thread(input, "> ")`, so waiting for input never blocks the event loop. At startup the CLI loads `Settings`, configures logging and checks the manifest: if it is missing, or its document hash, parser version or models differ from the configuration (`stale_reasons` in `ingestion/manifest.py`), it prints the reasons and `python src/ingest.py` and exits with code 2; it also exits with code 2 when `missing_credentials()` names a key; otherwise it loads the embedding models and `ChunkStore` once and builds the graph.
+`python src/main.py` starts a REPL (`/new` starts a new thread, `/quit` exits); `python src/main.py "question"` answers once. Unquoted words are joined into one question. `main.py` is the composition root: it parses the arguments, loads `Settings`, configures logging and runs `startup_problems` from `cli.py`, which checks the manifest: if it is missing, or its document hash, parser version or models differ from the configuration (`stale_reasons` in `ingestion/manifest.py`), it prints the reasons and `python src/ingest.py` and exits with code 2; it also exits with code 2 when `missing_credentials()` names a key. Otherwise it loads the embedding models and `ChunkStore` once, builds the tools, the model and the graph, and runs `asyncio.run(AgentCli(...).run(question))`. `AgentCli` in `cli.py` only runs the conversation and prints it; the REPL reads each line with `await asyncio.to_thread(input, "> ")`, so waiting for input never blocks the event loop.
 
-The CLI iterates `graph.astream(input, config, stream_mode="updates")` and prints each update as it arrives: the numbered plan, each requested tool call (e.g. `→ search_10k(section="item:1A", order_by="position", k=3)`), one line per tool result with its evidence IDs or error code, and the final answer rendered as Markdown with `rich`.
+The CLI iterates `graph.astream(input, config, stream_mode="updates")` and prints each update as it arrives: the numbered plan, each requested tool call (e.g. `→ search_10k(section="item:1A", order_by="position", k=3)`), one line per tool result with its evidence IDs, its error code from the `ToolMessage` status, or its not-found code, and the final answer rendered as Markdown with `rich`. Each question binds a new `run_id` and the `thread_id` to structlog's contextvars, and a question over `question_max_chars` is refused before it reaches the model (exit code 1 in one-shot mode).
 
 `--verbose` also prints full tool outputs and debug logs. Exit codes: 0 for success, 1 for a runtime error, 2 when the index isn't ready, 130 on Ctrl+C. Ctrl+C cancels in-flight calls (the default behavior of `asyncio.run`) and exits cleanly. An LLM failure after retries prints a clear message and keeps the REPL and its thread alive.
 

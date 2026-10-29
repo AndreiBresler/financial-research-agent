@@ -1,0 +1,6 @@
+{"name": "query_1_document_only", "question": "What are Apple's top 3 risk factors mentioned in their latest 10-K, and what percentage of total revenue did they spend on R&D?", "required_tools": ["search_10k", "calculator"], "forbidden_tools": ["web_search"], "expected_figures": ["8.3"]}
+{"name": "query_2_hybrid", "question": "How does Apple's gross margin compare to Microsoft's current gross margin, and what reasons does Apple cite in their 10-K for any margin pressure?", "required_tools": ["search_10k", "web_search"], "expected_figures": ["46.9"]}
+{"name": "risk_factors_document_only", "question": "What are Apple's risk factors?", "required_tools": ["search_10k"], "forbidden_tools": ["web_search"]}
+{"name": "stock_price_web_only", "question": "What's Apple's current stock price?", "required_tools": ["web_search"], "forbidden_tools": ["search_10k"]}
+{"name": "pe_ratio_document_and_web", "question": "How does Apple's P/E ratio compare to Microsoft?", "required_tools": ["search_10k", "web_search"]}
+{"name": "not_available", "question": "What was Apple's iPhone revenue in Brazil in fiscal 2025?", "required_tools": ["search_10k"], "expect_data_gap": true}

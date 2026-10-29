@@ -12,9 +12,9 @@ FILE_ENCODING = "utf-8"
 REAL_PROMPTS_DIR = PROJECT_ROOT / "prompts"
 SECTIONS = "item:1A Risk Factors, item:7 Management’s Discussion and Analysis"
 PLAN = "1. Find Apple's gross margin in Item 7 (search_10k)"
-ROUNDS_LEFT = 4
+MAX_TOOL_ROUNDS = 6
 
-SYSTEM_TEMPLATE = "Rules. Sections: $sections. Plan: $plan. Tool rounds left: $rounds_left."
+SYSTEM_TEMPLATE = "Rules. Sections: $sections. Plan: $plan. Tool rounds: $max_tool_rounds."
 EXAMPLES_TEMPLATE = "Example: net sales were $$416,161 million [D120]."
 PLANNER_TEMPLATE = "Plan the question. Sections: $sections."
 FINAL_TEMPLATE = "No tool rounds left; answer now.\nQuestion: $question\nResults:\n$tool_results"
@@ -52,10 +52,10 @@ class TestFilling:
         assert prompts.planner_prompt(SECTIONS) == f"Plan the question. Sections: {SECTIONS}."
 
     def test_system_prompt_fills_all_placeholders_and_appends_examples(self, tmp_path: Path) -> None:
-        """The system prompt is system.txt then examples.txt, with sections, plan and rounds left filled in."""
+        """The system prompt is system.txt then examples.txt, with sections, plan and tool budget filled in."""
         prompts = Prompts(write_prompts(tmp_path))
-        system_prompt = prompts.system_prompt(SECTIONS, PLAN, ROUNDS_LEFT)
-        assert system_prompt.startswith(f"Rules. Sections: {SECTIONS}. Plan: {PLAN}. Tool rounds left: 4.")
+        system_prompt = prompts.system_prompt(SECTIONS, PLAN, MAX_TOOL_ROUNDS)
+        assert system_prompt.startswith(f"Rules. Sections: {SECTIONS}. Plan: {PLAN}. Tool rounds: 6.")
         assert system_prompt.endswith("Example: net sales were $416,161 million [D120].")
 
     def test_final_prompt_fills_the_question_and_tool_results(self, tmp_path: Path) -> None:
@@ -67,13 +67,13 @@ class TestFilling:
     def test_braces_need_no_escaping(self, tmp_path: Path) -> None:
         """JSON-like braces in examples pass through unchanged."""
         prompts = Prompts(write_prompts(tmp_path, examples='{"tool": "calculator"} costs $$1'))
-        system_prompt = prompts.system_prompt(SECTIONS, PLAN, ROUNDS_LEFT)
+        system_prompt = prompts.system_prompt(SECTIONS, PLAN, MAX_TOOL_ROUNDS)
         assert system_prompt.endswith('{"tool": "calculator"} costs $1')
 
     def test_values_are_not_templated_again(self, tmp_path: Path) -> None:
         """A dollar sign inside a filled value, such as a plan step quoting a figure, is inserted as is."""
         prompts = Prompts(write_prompts(tmp_path))
-        system_prompt = prompts.system_prompt(SECTIONS, "Compare $AAPL with $plan", ROUNDS_LEFT)
+        system_prompt = prompts.system_prompt(SECTIONS, "Compare $AAPL with $plan", MAX_TOOL_ROUNDS)
         assert "Plan: Compare $AAPL with $plan." in system_prompt
 
     def test_files_are_read_once(self, tmp_path: Path) -> None:
@@ -127,20 +127,20 @@ class TestRealPrompts:
 
     def test_system_prompt_carries_the_filled_context(self, prompts: Prompts) -> None:
         """Sections, plan and the remaining tool rounds all reach the model."""
-        system_prompt = prompts.system_prompt(SECTIONS, PLAN, ROUNDS_LEFT)
+        system_prompt = prompts.system_prompt(SECTIONS, PLAN, MAX_TOOL_ROUNDS)
         assert SECTIONS in system_prompt
         assert PLAN in system_prompt
-        assert str(ROUNDS_LEFT) in system_prompt
+        assert str(MAX_TOOL_ROUNDS) in system_prompt
 
     def test_system_prompt_names_the_answer_headings(self, prompts: Prompts) -> None:
         """verify and render split the answer on these headings, so the prompt must use them verbatim."""
-        system_prompt = prompts.system_prompt(SECTIONS, PLAN, ROUNDS_LEFT)
+        system_prompt = prompts.system_prompt(SECTIONS, PLAN, MAX_TOOL_ROUNDS)
         assert ASSUMPTIONS_HEADING in system_prompt
         assert DATA_GAPS_HEADING in system_prompt
 
     def test_system_prompt_explains_markers_and_untrusted_content(self, prompts: Prompts) -> None:
         """The model is shown all three marker kinds and told what the untrusted wrapper means."""
-        system_prompt = prompts.system_prompt(SECTIONS, PLAN, ROUNDS_LEFT)
+        system_prompt = prompts.system_prompt(SECTIONS, PLAN, MAX_TOOL_ROUNDS)
         assert UNTRUSTED_TAG in system_prompt
         for prefix in CITATION_PREFIXES:
             assert prefix in system_prompt
@@ -154,7 +154,7 @@ class TestRealPrompts:
 
     def test_prompts_contain_no_urls(self, prompts: Prompts) -> None:
         """The model must never write URLs, so the examples it imitates contain none."""
-        system_prompt = prompts.system_prompt(SECTIONS, PLAN, ROUNDS_LEFT)
+        system_prompt = prompts.system_prompt(SECTIONS, PLAN, MAX_TOOL_ROUNDS)
         planner_prompt = prompts.planner_prompt(SECTIONS)
         final_prompt = prompts.final_prompt(QUESTION, TOOL_RESULTS)
         assert not URL_PATTERN.search(system_prompt)

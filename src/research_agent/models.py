@@ -55,3 +55,16 @@ class Plan(BaseModel):
     """Plan from the plan node, shown to the user before any tool runs."""
 
     steps: list[PlanStep] = Field(min_length=1, max_length=MAX_PLAN_STEPS)
+
+
+class Verification(BaseModel):
+    """Outcome of the deterministic answer checks (LLD section 9); empty lists mean a pass."""
+
+    unknown_ids: list[str] = []  # markers that match no Evidence in the thread
+    uncited: list[str] = []  # paragraphs, list items, table rows or sentences without a marker
+    has_urls: bool = False  # the model wrote a URL instead of citing a marker
+
+    @property
+    def passed(self) -> bool:
+        """Return True when every check passed."""
+        return not self.unknown_ids and not self.uncited and not self.has_urls

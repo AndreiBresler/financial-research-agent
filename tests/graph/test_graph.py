@@ -1,8 +1,8 @@
 """Graph tests (LLD sections 8 and 12): the real graph, driven by a scripted model, with no API keys.
 
 Covered paths: a normal answer, a tool error followed by recovery, budget exhaustion, concurrent tool calls, the
-per-question state reset on a thread, and node and tool logging. The verification-failure path needs the real
-verify and render, so it arrives with them in step 6.
+per-question state reset on a thread, verification (a cited answer gets Sources, an uncited one a warning), and
+node and tool logging.
 """
 
 import json
@@ -14,32 +14,30 @@ import pytest
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from graph_fakes import (
     EXAMPLES_TEMPLATE,
     FAILING_TOOL_NAME,
     SEARCH_TOOL_NAME,
+    TAX_EVIDENCE,
     TAX_PASSAGE,
     CallTimes,
     ScriptedChatModel,
+    answer_with_thinking,
     make_failing_tool,
     make_fake_search,
     plan_reply,
     scripted_model,
     tool_calls_reply,
-    write_test_prompts,
 )
-from research_agent.agent.graph import build_graph
+from graph_support import build_test_graph
+from research_agent.agent.render import SOURCES_HEADING, WARNING_PREFIX
 from research_agent.agent.state import question_input
-from research_agent.config import Settings
 from research_agent.log import configure_logging
 from research_agent.models import Plan, PlanStep
-from research_agent.retrieval.store import ChunkStore
 from research_agent.tools.calculator import TOOL_NAME as CALCULATOR_NAME
 from research_agent.tools.calculator import make_calculator
-from retrieval_fakes import build_corpus
 
 FILE_ENCODING = "utf-8"
 MAX_TOOL_ROUNDS = 6
@@ -69,16 +67,7 @@ def build(
     max_tool_rounds: int = MAX_TOOL_ROUNDS,
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
     """Build the real graph over the scripted model, the given tools and the small test corpus."""
-    # No .env file: the developer's real keys and overrides must not reach the tests.
-    settings = Settings(_env_file=None, max_tool_rounds=max_tool_rounds)
-    return build_graph(
-        llm=model,
-        tools=tools,
-        store=ChunkStore(build_corpus()),
-        prompts=write_test_prompts(prompts_dir),
-        settings=settings,
-        checkpointer=InMemorySaver(),
-    )
+    return build_test_graph(model, tools, prompts_dir, max_tool_rounds)
 
 
 async def ask(
@@ -149,6 +138,12 @@ class TestNormalAnswer:
         assert message_kinds(result["messages"]) == ["human", "ai_tool_calls", "tool", "ai"]
         assert tool_messages(result["messages"])[0].content == TAX_PASSAGE
 
+    async def test_plan_uses_native_structured_output(self, tmp_path: Path) -> None:
+        """The plan is requested as JSON-schema output, not a forced tool call, which Claude Sonnet 5.5 rejects."""
+        model = scripted_model(plan_reply((TAX_GOAL, SEARCH_TOOL_NAME)), TAX_ANSWER)
+        await ask(build(model, [make_fake_search()], tmp_path), TAX_QUESTION)
+        assert model.structured_output_methods == ["json_schema"]
+
     async def test_answer_without_tools(self, tmp_path: Path) -> None:
         """A question the model answers directly uses no tool rounds."""
         model = scripted_model(plan_reply(("Answer from the conversation", None)), TAX_ANSWER)
@@ -167,8 +162,9 @@ class TestNormalAnswer:
         assert "note:7" in planner_prompt
         assert is_question(planner_input[-1], TAX_QUESTION)
 
-    async def test_agent_prompt_carries_plan_rounds_left_and_examples(self, tmp_path: Path) -> None:
-        """The agent's system prompt is system.txt plus examples.txt, filled with the plan and rounds left."""
+    async def test_agent_prompt_is_identical_on_every_round(self, tmp_path: Path) -> None:
+        """system.txt plus examples.txt, filled with the plan and the fixed tool budget: Claude binds thinking blocks
+        to the system prompt, so it must not change between rounds."""
         model = scripted_model(
             plan_reply((TAX_GOAL, SEARCH_TOOL_NAME)),
             tool_calls_reply((SEARCH_TOOL_NAME, {"query": "tax rates"})),
@@ -177,8 +173,8 @@ class TestNormalAnswer:
         await ask(build(model, [make_fake_search()], tmp_path), TAX_QUESTION)
         first_agent_prompt = system_text(model.calls[1])
         second_agent_prompt = system_text(model.calls[2])
-        assert f"rounds_left={MAX_TOOL_ROUNDS}" in first_agent_prompt
-        assert f"rounds_left={MAX_TOOL_ROUNDS - 1}" in second_agent_prompt
+        assert first_agent_prompt == second_agent_prompt
+        assert f"max_rounds={MAX_TOOL_ROUNDS}" in first_agent_prompt
         assert TAX_GOAL in first_agent_prompt
         assert "item:1A" in first_agent_prompt
         assert first_agent_prompt.endswith(EXAMPLES_TEMPLATE)
@@ -257,7 +253,7 @@ class TestBudget:
         graph = build(model, [make_fake_search()], tmp_path, max_tool_rounds=SMALL_TOOL_BUDGET)
         await ask(graph, TAX_QUESTION)
         final_input = model.calls[-1]
-        assert "rounds_left=0" in system_text(final_input)
+        assert system_text(final_input) == system_text(model.calls[1])
         assert "tool" not in message_kinds(final_input)
         assert "ai_tool_calls" not in message_kinds(final_input)
         final_request = final_input[-1]
@@ -324,12 +320,94 @@ class TestThread:
         assert follow_up_input[2].content == TAX_ANSWER
         assert is_question(follow_up_input[3], FOLLOW_UP_QUESTION)
 
+    async def test_state_survives_the_checkpoint_round_trip(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A follow-up restores the plan and Evidence from the checkpoint, with no unregistered-type warning."""
+        graph = build(self.tax_turn_then_follow_up(), [make_fake_search()], tmp_path)
+        await ask(graph, TAX_QUESTION)
+        await ask(graph, FOLLOW_UP_QUESTION)
+        assert "unregistered type" not in caplog.text
+
+    async def test_current_turn_keeps_thinking_blocks(self, tmp_path: Path) -> None:
+        """Within a question the history is append-only, so the model's thinking is resent unchanged."""
+        tool_request = tool_calls_reply((SEARCH_TOOL_NAME, {"query": "tax rates"}), thinking="Search Item 1A first.")
+        model = scripted_model(plan_reply((TAX_GOAL, SEARCH_TOOL_NAME)), tool_request, TAX_ANSWER)
+        await ask(build(model, [make_fake_search()], tmp_path), TAX_QUESTION)
+        resent_request = model.calls[2][2]
+        assert resent_request.content == tool_request.content
+
+    async def test_earlier_turns_drop_thinking_blocks(self, tmp_path: Path) -> None:
+        """Earlier turns are resent without their tool calls, so their thinking blocks, bound to the full history,
+        are dropped; dropping thinking from the start of the history is allowed. The answer text stays."""
+        model = scripted_model(
+            plan_reply((TAX_GOAL, SEARCH_TOOL_NAME)),
+            tool_calls_reply((SEARCH_TOOL_NAME, {"query": "tax rates"})),
+            answer_with_thinking(TAX_ANSWER, "The tax risk factor answers this."),
+            plan_reply(("Answer from the conversation", None)),
+            FOLLOW_UP_ANSWER,
+        )
+        graph = build(model, [make_fake_search()], tmp_path)
+        await ask(graph, TAX_QUESTION)
+        await ask(graph, FOLLOW_UP_QUESTION)
+        earlier_answer = model.calls[-1][2]
+        assert isinstance(earlier_answer, AIMessage)
+        assert earlier_answer.content == [{"type": "text", "text": TAX_ANSWER}]
+
     async def test_threads_are_isolated(self, tmp_path: Path) -> None:
         """/new starts a new thread, which carries nothing from the previous one."""
         graph = build(self.tax_turn_then_follow_up(), [make_fake_search()], tmp_path)
         await ask(graph, TAX_QUESTION)
         result = await ask(graph, FOLLOW_UP_QUESTION, thread_id=OTHER_THREAD_ID)
         assert message_kinds(result["messages"]) == ["human", "ai"]
+
+
+class TestVerification:
+    """verify checks the answer in code and render appends Sources, or a warning when a check fails."""
+
+    async def test_cited_answer_gets_sources_and_no_warning(self, tmp_path: Path) -> None:
+        """Every marker resolves, so the answer is followed by its Sources and carries no warning."""
+        model = scripted_model(
+            plan_reply((TAX_GOAL, SEARCH_TOOL_NAME)),
+            tool_calls_reply((SEARCH_TOOL_NAME, {"query": "tax rates"})),
+            TAX_ANSWER,
+        )
+        result = await ask(build(model, [make_fake_search()], tmp_path), TAX_QUESTION)
+        final = result["final"]
+        assert final.startswith(TAX_ANSWER)
+        assert SOURCES_HEADING in final
+        assert f"[D4] {TAX_EVIDENCE.source}" in final
+        assert WARNING_PREFIX not in final
+
+    async def test_uncited_answer_gets_a_warning(self, tmp_path: Path) -> None:
+        """An answer with an uncited figure and an unknown marker is delivered, with a warning on top."""
+        uncited_answer = "Net sales were $416 billion in fiscal 2025. Margins rose [D999]."
+        model = scripted_model(
+            plan_reply((TAX_GOAL, SEARCH_TOOL_NAME)),
+            tool_calls_reply((SEARCH_TOOL_NAME, {"query": "net sales"})),
+            uncited_answer,
+        )
+        result = await ask(build(model, [make_fake_search()], tmp_path), TAX_QUESTION)
+        final = result["final"]
+        assert final.startswith(WARNING_PREFIX)
+        assert "D999" in final.split(uncited_answer)[0]
+        assert uncited_answer in final
+
+    async def test_follow_up_may_cite_evidence_from_an_earlier_question(self, tmp_path: Path) -> None:
+        """IDs are stable and the registry spans the thread, so a follow-up citing [D4] still verifies."""
+        model = scripted_model(
+            plan_reply((TAX_GOAL, SEARCH_TOOL_NAME)),
+            tool_calls_reply((SEARCH_TOOL_NAME, {"query": "tax rates"})),
+            TAX_ANSWER,
+            plan_reply(("Answer from the conversation", None)),
+            FOLLOW_UP_ANSWER,
+        )
+        graph = build(model, [make_fake_search()], tmp_path)
+        await ask(graph, TAX_QUESTION)
+        result = await ask(graph, FOLLOW_UP_QUESTION)
+        final = result["final"]
+        assert WARNING_PREFIX not in final
+        assert f"[D4] {TAX_EVIDENCE.source}" in final
 
 
 class TestLogging:

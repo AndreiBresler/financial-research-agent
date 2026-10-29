@@ -9,32 +9,27 @@ What's built versus designed but not yet implemented, keyed to the build order i
 | 1 | 10-K parser and table cleanup | ✅ Done | `92fab98` |
 | 2 | Chunker, index, manifest, `src/ingest.py` | ✅ Done | `425a1c1` |
 | 3 | `ChunkStore`, hybrid search, `search_10k`, retrieval eval, threshold calibration | ✅ Done | `d463a50`, `f8bb58e` |
-| 4 | `web_search` and `calculator` tools | ✅ Done | |
-| 5 | Agent graph, prompts, logging (`log.py`), scripted-model tests | ✅ Done | |
-| 6 | Answer verification, rendering, CLI | ⬜ Not started | |
-| 7 | Integration tests on the two required queries, README | ⬜ Not started | |
+| 4 | `web_search` and `calculator` tools | ✅ Done | `c8cafd7` |
+| 5 | Agent graph, prompts, logging (`log.py`), scripted-model tests | ✅ Done | `536de87` |
+| 6 | Answer verification, rendering, CLI | ✅ Done | |
+| 7 | Integration tests on the two required queries, README | ✅ Done | |
 
 ## What works today
 
-- **Ingestion.** `python src/ingest.py` parses the filing, chunks it and builds `data/index/` (277 chunks from 640 blocks). It needs no API keys.
-- **Search.** `search_10k` returns cited passages with Evidence. It supports a section filter (`item:8` includes its notes), a `kind` filter (text, risk factor or table), relevance or position order, and one hop of cross-references.
-- **Web search.** `web_search` wraps an injected Tavily client: basic depth, a timeout, results with `W` markers and Evidence. Content is capped at 1,500 characters and wrapped as untrusted, with look-alike wrapper tags removed. Failures return `web_unavailable`; no results return `NO_RELEVANT_CONTENT`.
-- **Calculator.** `calculator` evaluates arithmetic with `simpleeval`: no names, no attribute access, only `round` and `abs`, finite numeric results rounded to 6 decimals, `C` markers from the whitespace-free expression. Anything else returns `invalid_expression`.
-- **Shared tool output.** `tools/output.py` holds the not-found code and the output cap that drops whole passages with their Evidence; all three tools use it.
-- **Agent graph.** `build_graph` wires plan → agent ⇄ tools → verify with every dependency injected. The plan node returns a structured `Plan` kept out of the conversation; the agent node binds the tools, counts tool rounds and, at `max_tool_rounds`, answers without tools from a flattened `final.txt` input. Earlier turns are resent as questions and answers only. `verify` is a placeholder that stores the answer text in `final`.
-- **Prompts.** `prompts/` holds `system.txt`, `examples.txt`, `planner.txt` and `final.txt`; `Prompts` loads them once and fails at startup on a missing file, a stray `$` or an unknown placeholder.
-- **Logging.** `configure_logging` writes JSON lines to `logs/agent.jsonl` (`--verbose` adds debug logs on stderr); `log_call` logs every node and tool call with latency, token usage, `evidence_count` and outcome. Tool errors are raised as `ToolException`, so they are logged as failures and reach the model as `status="error"` messages.
-- **Eval.** `python src/evaluate.py` scores retrieval on `eval/retrieval_set.jsonl` (17 on-topic and 3 off-topic questions). At `min_dense_score` 0.6: hit@5 1.0, not-found accuracy 1.0.
-- **Configuration.** `Settings` loads `.env`. API keys are optional until the agent starts.
-
-## Not built yet
-
-- Verification (the checks behind the placeholder `verify` node), rendering of the Sources list, and the CLI (REPL, one-shot mode, startup checks, exit codes).
-- `main.py`, the composition root that builds the model, tools, `Prompts`, logging and the graph.
-- Integration tests and the final README, which must answer the assignment's README questions.
+- **Ingestion.** `python src/ingest.py` parses the filing, chunks it and builds `data/index/` (277 chunks from 640 blocks). No API keys needed.
+- **Tools.** `search_10k` (hybrid search, section and kind filters, position order, one hop of cross-references), `web_search` (Tavily, untrusted wrapping) and `calculator` (`simpleeval`). Errors are raised as `ToolException` and reach the model as `status="error"` messages.
+- **Agent.** plan → agent ⇄ tools → verify on LangGraph, Claude Sonnet 5.5 via `init_chat_model`. The plan uses native structured output; the system prompt is stable within a question and earlier turns are resent without thinking blocks (Claude binds thinking to the history).
+- **Verification and rendering.** Code checks every marker, paragraph, list item, table row and figure; renders Sources from the Evidence; warns above the answer when a check fails.
+- **CLI.** `python src/main.py` (REPL with `/new`, `/quit`) or one question; streams the plan, tool calls and results; startup checks exit 2 on a missing or stale index or a missing key.
+- **End-to-end.** `python src/run_e2e.py` runs `eval/agent_queries.jsonl` (the two required queries plus the assignment's decision-logic examples and a not-disclosed case); `pytest -m integration` runs the same through `tests/test_queries.py`. Latest answers: `docs/example-outputs.md`.
+- **Eval.** `python src/evaluate.py`: hit@5 1.0, not-found accuracy 1.0 at `min_dense_score` 0.6.
 
 ## Tests
 
-- Default run (`pytest`): 309 tests, about 6 s, no API keys or downloads; graph tests use a scripted model.
-- Opt-in (`pytest -m embedding_models`): 12 tests with the real models on the real filing, about 1.5 min once the models are cached.
+- Default run (`pytest`): 393 tests, about 7 s, no API keys or downloads.
+- Opt-in: `pytest -m embedding_models` (12 tests, real models and filing); `pytest -m integration` (6 end-to-end queries, real APIs, costs tokens).
 - `ruff check`, `ruff format --check` and `mypy` (strict) pass.
+
+## Latest end-to-end run
+
+Both required queries pass (R&D 8.3% of net sales; gross margin 46.9%). Across runs, some answers to the other queries carry a verification warning for an uncited aside, and the agent once added a web search to the 10-K-only risk factors question. Model output varies between runs.

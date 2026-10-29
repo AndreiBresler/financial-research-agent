@@ -17,10 +17,10 @@ SYSTEM_EXAMPLES_SEPARATOR = "\n\n"
 
 SECTIONS = "sections"
 PLAN = "plan"
-ROUNDS_LEFT = "rounds_left"
+MAX_TOOL_ROUNDS = "max_tool_rounds"
 QUESTION = "question"
 TOOL_RESULTS = "tool_results"
-AGENT_PLACEHOLDERS = frozenset({SECTIONS, PLAN, ROUNDS_LEFT})
+AGENT_PLACEHOLDERS = frozenset({SECTIONS, PLAN, MAX_TOOL_ROUNDS})
 PLACEHOLDERS_BY_FILE = {
     SYSTEM_FILE: AGENT_PLACEHOLDERS,
     EXAMPLES_FILE: AGENT_PLACEHOLDERS,
@@ -56,9 +56,9 @@ class Prompts:
         """Fill the planner prompt with the section list."""
         return self.templates[PLANNER_FILE].substitute({SECTIONS: sections})
 
-    def system_prompt(self, sections: str, plan: str, rounds_left: int) -> str:
-        """Fill the agent's system prompt, system.txt then examples.txt, with the sections, plan and rounds left."""
-        values = {SECTIONS: sections, PLAN: plan, ROUNDS_LEFT: rounds_left}
+    def system_prompt(self, sections: str, plan: str, max_tool_rounds: int) -> str:
+        """Fill the agent's system prompt, system.txt then examples.txt, with the sections, plan and tool budget."""
+        values = {SECTIONS: sections, PLAN: plan, MAX_TOOL_ROUNDS: max_tool_rounds}
         rules = self.templates[SYSTEM_FILE].substitute(values)
         examples = self.templates[EXAMPLES_FILE].substitute(values)
         return f"{rules}{SYSTEM_EXAMPLES_SEPARATOR}{examples}"

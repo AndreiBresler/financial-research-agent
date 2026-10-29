@@ -1,7 +1,10 @@
 """The plan and agent nodes (LLD section 8): async callables with their model, store and prompts injected.
 
 The model sees the whole current question, its own tool calls and their results, but only the questions and final
-answers of earlier ones: old tool output stays in state for citations without being resent.
+answers of earlier ones: old tool output stays in state for citations without being resent. Claude binds each
+thinking block to the exact system prompt and history that produced it, so the system prompt never changes within a
+question, and earlier turns are resent without their thinking blocks; dropping thinking blocks from the start of the
+history is allowed, editing it under a block is not.
 """
 
 from typing import Any
@@ -26,7 +29,10 @@ SECTION_SEPARATOR = ", "
 PLAN_LINE_SEPARATOR = "\n"
 TOOL_RESULT_SEPARATOR = "\n\n"
 NO_PLAN = "No plan."
-NO_ROUNDS_LEFT = 0
+THINKING_BLOCK_TYPES = frozenset({"thinking", "redacted_thinking"})
+BLOCK_TYPE_KEY = "type"
+# Claude's native structured output: Claude Sonnet 5.5 rejects the forced tool call LangChain uses by default.
+STRUCTURED_OUTPUT_METHOD = "json_schema"
 
 
 def format_sections(store: ChunkStore) -> str:
@@ -60,10 +66,22 @@ def is_question_or_answer(message: BaseMessage) -> bool:
     return isinstance(message, AIMessage) and not message.tool_calls
 
 
+def without_thinking(message: BaseMessage) -> BaseMessage:
+    """Return the message without thinking blocks, which are invalid once the history before them is edited."""
+    if not isinstance(message, AIMessage) or isinstance(message.content, str):
+        return message
+    kept_blocks = [
+        block
+        for block in message.content
+        if not (isinstance(block, dict) and block.get(BLOCK_TYPE_KEY) in THINKING_BLOCK_TYPES)
+    ]
+    return message.model_copy(update={"content": kept_blocks})
+
+
 def earlier_turns(messages: list[AnyMessage]) -> list[BaseMessage]:
-    """Return the questions and final answers before the current question."""
+    """Return the questions and final answers before the current question, without their thinking blocks."""
     start = current_turn_start(messages)
-    return [message for message in messages[:start] if is_question_or_answer(message)]
+    return [without_thinking(message) for message in messages[:start] if is_question_or_answer(message)]
 
 
 def conversation_view(messages: list[AnyMessage]) -> list[BaseMessage]:
@@ -84,7 +102,7 @@ class PlanNode:
 
     def __init__(self, llm: BaseChatModel, store: ChunkStore, prompts: Prompts) -> None:
         """Prepare the structured-output model and the section list."""
-        self.planner = llm.with_structured_output(Plan)
+        self.planner = llm.with_structured_output(Plan, method=STRUCTURED_OUTPUT_METHOD)
         self.sections = format_sections(store)
         self.prompts = prompts
 
@@ -119,21 +137,24 @@ class AgentNode:
     @log_call(NODE_KIND, AGENT_NODE)
     async def __call__(self, state: AgentState) -> dict[str, Any]:
         """Take one agent step: request tools or answer, counting tool rounds."""
-        rounds_left = self.max_tool_rounds - state["tool_rounds"]
-        if rounds_left <= NO_ROUNDS_LEFT:
+        if state["tool_rounds"] >= self.max_tool_rounds:
             return await self.answer_without_tools(state)
-        system_prompt = self.prompts.system_prompt(self.sections, format_plan(state["plan"]), rounds_left)
         conversation = conversation_view(state["messages"])
+        system_prompt = self.system_prompt(state)
         reply = await self.tool_model.ainvoke([SystemMessage(system_prompt), *conversation])
         if reply.tool_calls:
             return {"messages": [reply], "tool_rounds": state["tool_rounds"] + 1}
         return {"messages": [reply]}
 
+    def system_prompt(self, state: AgentState) -> str:
+        """Fill the system prompt; it depends only on the question's plan, so it is identical on every round."""
+        return self.prompts.system_prompt(self.sections, format_plan(state["plan"]), self.max_tool_rounds)
+
     async def answer_without_tools(self, state: AgentState) -> dict[str, Any]:
         """Force an answer from a flattened input, so the request carries no tool-call blocks."""
         messages = state["messages"]
         question = messages[current_turn_start(messages)].text
-        system_prompt = self.prompts.system_prompt(self.sections, format_plan(state["plan"]), NO_ROUNDS_LEFT)
+        system_prompt = self.system_prompt(state)
         final_prompt = self.prompts.final_prompt(question, tool_results_text(messages))
         model_input = [SystemMessage(system_prompt), *earlier_turns(messages), HumanMessage(final_prompt)]
         reply = await self.llm.ainvoke(model_input)

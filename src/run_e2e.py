@@ -40,6 +40,8 @@ def print_result(console: Console, result: QueryResult) -> None:
     console.print(f"Q: {result.question}", markup=False, highlight=False)
     console.print(f"Tools: {', '.join(result.tools_used) or 'none'}", markup=False, highlight=False)
     console.print(Markdown(result.answer))
+    for warning in result.warnings:
+        console.print(f"WARNING {warning}", style="yellow", markup=False, highlight=False)
     if result.passed:
         console.print("PASSED", style="green")
     else:

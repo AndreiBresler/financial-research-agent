@@ -26,10 +26,10 @@ What's built versus designed but not yet implemented, keyed to the build order i
 
 ## Tests
 
-- Default run (`pytest`): 393 tests, about 7 s, no API keys or downloads.
+- Default run (`pytest`): 397 tests, about 7 s, no API keys or downloads.
 - Opt-in: `pytest -m embedding_models` (12 tests, real models and filing); `pytest -m integration` (6 end-to-end queries, real APIs, costs tokens).
 - `ruff check`, `ruff format --check` and `mypy` (strict) pass.
 
 ## Latest end-to-end run
 
-Both required queries pass (R&D 8.3% of net sales; gross margin 46.9%). Across runs, some answers to the other queries carry a verification warning for an uncited aside, and the agent once added a web search to the 10-K-only risk factors question. Model output varies between runs.
+The end-to-end checks fail on missed tools or figures, fabricated citations, model-written URLs and uncited tool results; uncited asides are warnings. All 6 queries passed in two consecutive runs on 2026-10-29, including both required queries (R&D 8.3% of net sales; gross margin 46.9%). Model output varies between runs: the agent once added a web search to the 10-K-only risk factors question, which prompt rule 3 now addresses.

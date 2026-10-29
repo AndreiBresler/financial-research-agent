@@ -5,8 +5,8 @@ from pathlib import Path
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from filing_support import PROJECT_ROOT
-from research_agent.agent.render import WARNING_PREFIX
 from research_agent.e2e import AgentQuery, QueryResult, check_result, format_report, load_agent_queries, tools_in_order
+from research_agent.models import Verification
 
 QUERIES_PATH = PROJECT_ROOT / "eval" / "agent_queries.jsonl"
 ASSIGNMENT_QUERY_1 = (
@@ -24,7 +24,8 @@ DOCUMENT_QUERY = AgentQuery(
     forbidden_tools=["web_search"],
     expected_figures=["8.3"],
 )
-GOOD_ANSWER = "R&D was 8.3% of net sales [C3bd255].\n\n### Sources\n- [C3bd255] 34550 / 416161 * 100 = 8.302075"
+GOOD_ANSWER = "R&D was $34,550 million [D135], which is 8.3% of net sales [C3bd255]."
+PASSED = Verification()
 
 
 class TestQueryFile:
@@ -43,32 +44,53 @@ class TestQueryFile:
 
 
 class TestCheckResult:
-    """Each expectation produces one readable failure when it is missed."""
+    """Each expectation and grounding rule produces one readable failure when it is missed."""
 
     def test_all_expectations_met(self) -> None:
-        """Required tools used, no forbidden tool, figure present, no warning."""
-        assert check_result(DOCUMENT_QUERY, ["search_10k", "calculator"], GOOD_ANSWER) == []
+        """Required tools used and cited, no forbidden tool, figure present, no fabricated citation."""
+        assert check_result(DOCUMENT_QUERY, ["search_10k", "calculator"], GOOD_ANSWER, PASSED) == []
 
     def test_missing_and_forbidden_tools(self) -> None:
         """Skipping the calculator and reaching for the web are both reported."""
-        failures = check_result(DOCUMENT_QUERY, ["search_10k", "web_search"], GOOD_ANSWER)
-        assert failures == ["did not use calculator", "used web_search, which this question shouldn't need"]
+        failures = check_result(DOCUMENT_QUERY, ["search_10k", "web_search"], GOOD_ANSWER, PASSED)
+        assert failures[:2] == ["did not use calculator", "used web_search, which this question shouldn't need"]
 
     def test_missing_figure(self) -> None:
         """The answer must contain the key figure."""
-        failures = check_result(DOCUMENT_QUERY, ["search_10k", "calculator"], "R&D was a large share [C3bd255].")
+        answer = "R&D was a large share of net sales [C3bd255], per the statement of operations [D135]."
+        failures = check_result(DOCUMENT_QUERY, ["search_10k", "calculator"], answer, PASSED)
         assert failures == ["answer lacks 8.3"]
 
-    def test_verification_warning_fails_the_query(self) -> None:
-        """An answer the verifier flagged is not a pass."""
-        failures = check_result(DOCUMENT_QUERY, ["search_10k", "calculator"], f"{WARNING_PREFIX} x\n\n{GOOD_ANSWER}")
-        assert failures == ["verification flagged the answer"]
+    def test_fabricated_citation_fails(self) -> None:
+        """A marker that matches no tool result is a grounding failure."""
+        verification = Verification(unknown_ids=["D999"])
+        failures = check_result(DOCUMENT_QUERY, ["search_10k", "calculator"], GOOD_ANSWER, verification)
+        assert failures == ["cites [D999], which no tool returned"]
+
+    def test_model_written_url_fails(self) -> None:
+        """Sources come from code; a URL in the answer is a grounding failure."""
+        verification = Verification(has_urls=True)
+        failures = check_result(DOCUMENT_QUERY, ["search_10k", "calculator"], GOOD_ANSWER, verification)
+        assert failures == ["the model wrote a URL instead of citing a source"]
+
+    def test_required_tool_left_uncited_fails(self) -> None:
+        """Using the 10-K but citing only the calculation doesn't show where the inputs came from."""
+        answer = "R&D was 8.3% of net sales [C3bd255]."
+        failures = check_result(DOCUMENT_QUERY, ["search_10k", "calculator"], answer, PASSED)
+        assert failures == ["never cites search_10k results"]
+
+    def test_uncited_sentences_do_not_fail(self) -> None:
+        """An uncited aside is a warning on the answer, not a failed query."""
+        verification = Verification(uncited=["The gap is roughly structural."])
+        assert check_result(DOCUMENT_QUERY, ["search_10k", "calculator"], GOOD_ANSWER, verification) == []
 
     def test_data_gap_expected(self) -> None:
         """A question the filing can't answer must say so under Data gaps."""
         query = AgentQuery(name="gap", question="q", required_tools=["search_10k"], expect_data_gap=True)
-        assert check_result(query, ["search_10k"], "Apple sells no cars.") == ["answer has no ### Data gaps section"]
-        assert check_result(query, ["search_10k"], "Apple sells no cars.\n\n### Data gaps\n- None found.") == []
+        answer = "Brazil isn't broken out [D234]."
+        assert check_result(query, ["search_10k"], answer, PASSED) == ["answer has no ### Data gaps section"]
+        answer_with_gap = f"{answer}\n\n### Data gaps\n- Brazil net sales aren't disclosed."
+        assert check_result(query, ["search_10k"], answer_with_gap, PASSED) == []
 
 
 class TestToolsInOrder:
@@ -100,3 +122,10 @@ class TestReport:
         assert "**Result:** passed" in report
         assert "A1 [D4]." in report
         assert "FAILED: did not use web_search" in report
+
+    def test_report_counts_citation_warnings(self) -> None:
+        """Uncited sentences show up in the report without failing the query."""
+        result = QueryResult(
+            name="ok", question="Q?", tools_used=["search_10k"], answer="A [D4].", failures=[], warnings=["uncited: x"]
+        )
+        assert "**Result:** passed · **Citation warnings:** 1" in format_report([result])

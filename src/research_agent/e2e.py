@@ -1,7 +1,10 @@
-"""End-to-end checks of the real agent (assignment test queries): tool choice, key figures and verification.
+"""End-to-end checks of the real agent (assignment test queries): tool choice, figures, grounding and citations.
 
 Each query in eval/agent_queries.jsonl names the tools the agent must use and must not use, figures the answer
-must contain, and whether the answer must report a data gap. Shared by src/run_e2e.py and tests/test_queries.py.
+must contain, and whether the answer must report a data gap. A query fails on a missed expectation, on a citation
+that matches no tool result, on a URL the model wrote, or when a required tool's results go uncited. Sentences
+the verifier finds uncited are reported as warnings: model output varies between runs, and the answer already
+carries the warning for the user. Shared by src/run_e2e.py and tests/test_queries.py.
 """
 
 import uuid
@@ -13,11 +16,16 @@ from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel
 
 from research_agent.agent.graph import AgentGraph
-from research_agent.agent.render import WARNING_PREFIX
 from research_agent.agent.state import question_input
-from research_agent.agent.verify import DATA_GAPS_HEADING
+from research_agent.agent.verify import DATA_GAPS_HEADING, check_answer, cited_ids, evidence_registry
 from research_agent.cli import RECURSION_LIMIT
-from research_agent.models import ToolName
+from research_agent.models import ToolName, Verification
+from research_agent.tools.calculator import CALC_ID_PREFIX
+from research_agent.tools.calculator import TOOL_NAME as CALCULATOR_NAME
+from research_agent.tools.search_10k import DOC_ID_PREFIX
+from research_agent.tools.search_10k import TOOL_NAME as SEARCH_10K_NAME
+from research_agent.tools.web_search import TOOL_NAME as WEB_SEARCH_NAME
+from research_agent.tools.web_search import WEB_ID_PREFIX
 
 FILE_ENCODING = "utf-8"
 REPORT_TITLE = "# Example outputs"
@@ -26,6 +34,12 @@ PASSED_LABEL = "passed"
 FAILED_LABEL = "FAILED"
 NO_TOOLS = "none"
 LIST_SEPARATOR = ", "
+ISSUE_SEPARATOR = "; "
+MARKER_PREFIX_BY_TOOL = {
+    SEARCH_10K_NAME: DOC_ID_PREFIX,
+    WEB_SEARCH_NAME: WEB_ID_PREFIX,
+    CALCULATOR_NAME: CALC_ID_PREFIX,
+}
 
 
 class AgentQuery(BaseModel):
@@ -47,6 +61,7 @@ class QueryResult(BaseModel):
     tools_used: list[str]
     answer: str
     failures: list[str]
+    warnings: list[str] = []
 
     @property
     def passed(self) -> bool:
@@ -60,16 +75,24 @@ def load_agent_queries(path: Path) -> list[AgentQuery]:
     return [AgentQuery.model_validate_json(line) for line in lines if line.strip()]
 
 
-def check_result(query: AgentQuery, tools_used: list[str], answer: str) -> list[str]:
-    """Compare a run with the query's expectations and describe every miss."""
+def uncited_tools(query: AgentQuery, answer: str) -> list[str]:
+    """Return the required tools whose results the answer never cites."""
+    cited_prefixes = {citation_id[0] for citation_id in cited_ids(answer)}
+    return [tool for tool in query.required_tools if MARKER_PREFIX_BY_TOOL[tool] not in cited_prefixes]
+
+
+def check_result(query: AgentQuery, tools_used: list[str], answer: str, verification: Verification) -> list[str]:
+    """Compare a run with the query's expectations and the hard grounding rules; describe every miss."""
     failures = [f"did not use {tool}" for tool in query.required_tools if tool not in tools_used]
     unneeded_tools = [tool for tool in query.forbidden_tools if tool in tools_used]
     failures.extend(f"used {tool}, which this question shouldn't need" for tool in unneeded_tools)
     failures.extend(f"answer lacks {figure}" for figure in query.expected_figures if figure not in answer)
     if query.expect_data_gap and DATA_GAPS_HEADING not in answer:
         failures.append(f"answer has no {DATA_GAPS_HEADING} section")
-    if answer.startswith(WARNING_PREFIX):
-        failures.append("verification flagged the answer")
+    failures.extend(f"cites [{citation_id}], which no tool returned" for citation_id in verification.unknown_ids)
+    if verification.has_urls:
+        failures.append("the model wrote a URL instead of citing a source")
+    failures.extend(f"never cites {tool} results" for tool in uncited_tools(query, answer))
     return failures
 
 
@@ -88,11 +111,17 @@ async def run_query(graph: AgentGraph, query: AgentQuery) -> QueryResult:
     except Exception as exception:
         failure = f"run failed: {type(exception).__name__}: {exception}"
         return QueryResult(name=query.name, question=query.question, tools_used=[], answer="", failures=[failure])
-    tools_used = tools_in_order(state["messages"])
-    answer = state["final"] or ""
-    failures = check_result(query, tools_used, answer)
+    messages = state["messages"]
+    tools_used = tools_in_order(messages)
+    model_answer = messages[-1].text
+    verification = check_answer(model_answer, evidence_registry(messages))
     return QueryResult(
-        name=query.name, question=query.question, tools_used=tools_used, answer=answer, failures=failures
+        name=query.name,
+        question=query.question,
+        tools_used=tools_used,
+        answer=state["final"] or "",
+        failures=check_result(query, tools_used, model_answer, verification),
+        warnings=[f"uncited: {text}" for text in verification.uncited],
     )
 
 
@@ -100,9 +129,10 @@ def format_report(results: list[QueryResult]) -> str:
     """Render the results as Markdown: each question, the tools it used, its outcome and its answer."""
     sections = [REPORT_TITLE]
     for result in results:
-        outcome = PASSED_LABEL if result.passed else f"{FAILED_LABEL}: {'; '.join(result.failures)}"
+        outcome = PASSED_LABEL if result.passed else f"{FAILED_LABEL}: {ISSUE_SEPARATOR.join(result.failures)}"
         tools = LIST_SEPARATOR.join(result.tools_used) or NO_TOOLS
         heading = f"## {result.name}\n\n**Question:** {result.question}"
-        sections.append(f"{heading}\n\n**Tools:** {tools} · **Result:** {outcome}")
+        warnings = f" · **Citation warnings:** {len(result.warnings)}" if result.warnings else ""
+        sections.append(f"{heading}\n\n**Tools:** {tools} · **Result:** {outcome}{warnings}")
         sections.append(result.answer)
     return REPORT_SEPARATOR.join(sections)

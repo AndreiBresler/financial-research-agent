@@ -50,7 +50,7 @@ python src/run_e2e.py --only query_1_document_only      # one query by name
 pytest -m integration
 ```
 
-The queries live in `eval/agent_queries.jsonl`: the two required ones, the assignment's decision-logic examples (risk factors → 10-K only, current stock price → web only, P/E versus Microsoft → both) and a figure the 10-K doesn't disclose. Each names the tools it must and must not use, the figures the answer must contain, and whether it must report a data gap.
+The queries live in `eval/agent_queries.jsonl`: the two required ones, the assignment's decision-logic examples (risk factors → 10-K only, current stock price → web only, P/E versus Microsoft → both) and a figure the 10-K doesn't disclose. Each names the tools it must and must not use, the figures the answer must contain, and whether it must report a data gap. A query fails on a missed expectation, on a citation that matches no tool result, on a URL the model wrote, or when a required tool's results go uncited. Sentences the citation check finds uncited are listed as warnings: the answer shows them to the user, but they don't fail the run, because model wording varies between runs.
 
 ### Example
 
@@ -139,7 +139,7 @@ The [high-level](docs/high-level-design.md) and [low-level](docs/low-level-desig
 
 ## Results and limitations
 
-- **The two required queries** pass end to end: the right tools, the key figures (R&D ≈ 8.3% of net sales, gross margin 46.9%), and citations on every claim. Model output varies between runs, so a run can still include an uncited aside; when it does, the answer is shown with a warning listing it.
-- **The citation check is strict on purpose.** It catches real lapses, such as a restated figure or an interpretation without a marker. In the latest run of the six end-to-end queries, the warnings were all for such sentences; see `docs/example-outputs.md`.
+- **The two required queries** pass end to end: the right tools, the key figures (R&D ≈ 8.3% of net sales, gross margin 46.9%), and cited sources from each tool. See `docs/example-outputs.md`.
+- **The citation check is strict on purpose.** It flags any paragraph, list item or figure without a marker, including asides such as a caveat or an interpretation. Model wording varies between runs, so some answers carry such a warning; it is shown above the answer and counted in the end-to-end report.
 - **"Top 3 risk factors"** means the first three in the filing's order, since the 10-K doesn't rank them; the answer says so under Assumptions.
 - **Web data** is only as current and consistent as the pages found; answers state the period of each figure and list conflicts under Data gaps.

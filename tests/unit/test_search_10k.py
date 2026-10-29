@@ -11,9 +11,9 @@ from research_agent.models import Evidence
 from research_agent.retrieval.index import Index
 from research_agent.retrieval.search import SearchConfig, Searcher
 from research_agent.retrieval.store import ChunkStore
+from research_agent.tools.output import NO_RELEVANT_CONTENT
 from research_agent.tools.search_10k import (
     MISSING_SECTION,
-    NO_RELEVANT_CONTENT,
     TOOL_NAME,
     UNKNOWN_SECTION,
     SearchTenKArguments,

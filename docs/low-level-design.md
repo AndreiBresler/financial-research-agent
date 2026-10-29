@@ -1,6 +1,6 @@
 # Financial Research Agent — Low-Level Design
 
-**Author:** Andrei Bresler · **Version:** 1.2 · **Date:** 2026-10-27 · **Status:** Draft · **Implements:** HLD v1.2
+**Author:** Andrei Bresler · **Version:** 1.3 · **Date:** 2026-10-29 · **Status:** Draft · **Implements:** HLD v1.3
 
 ## 1. Conventions
 
@@ -139,7 +139,7 @@ class AgentState(TypedDict):                      # research_agent/agent/state.p
     final: str | None              # rendered answer: body, Sources, optional warning
 ```
 
-**Citation IDs are stable, not counters:** `D` plus the chunk's sequence number; `W` and `C` plus the first 6 hex characters of a SHA-1 of the URL or the expression. Parallel tool calls need no shared counter, and a source retrieved twice keeps one ID.
+**Citation IDs are stable, not counters:** `D` plus the chunk's sequence number; `W` and `C` plus the first 6 hex characters of a SHA-1 of the URL or of the expression with all whitespace removed. Parallel tool calls need no shared counter, and a source retrieved twice keeps one ID: `1+2` and `1 + 2` cite the same calculation.
 
 **The evidence registry is derived, not stored:** it is the union of the `Evidence` artifacts on the `ToolMessage`s already in `messages`, so it needs no separate state field.
 
@@ -224,8 +224,8 @@ The snippet is illustrative. In code, `Searcher(store, index, SearchConfig)` hol
 | Tool | Arguments | Behavior | Errors returned to the model |
 |---|---|---|---|
 | `search_10k` | `query` (≤ 300 chars), `section` (e.g. `item:7`, `note:5`), `order_by` (`relevance` or `position`), `k` (1–10), `kind` (`text`, `risk_factor` or `table`) | `k` defaults to `top_k`. `kind` filters by chunk type, together with `section`, in both modes and in cross-reference expansion; `table` finds reported figures. `relevance`: hybrid search plus cross-references. `position`: the first `k` units of `section` in document order, with all parts of a split unit; in `item:1A` only risk factors unless `kind` says otherwise, so "top N risk factors" skips the intro. `section` is required for `position`; `item:8` includes its notes. | `NO_RELEVANT_CONTENT in item:7: retry without the section filter` (with a kind: `… for kind table: retry without the section or kind filter`; without filters: `NO_RELEVANT_CONTENT: …`); `ERROR unknown_section: …` with the list of valid IDs; `ERROR missing_section: …` for `position` without a section. |
-| `web_search` | `query` (≤ 300 chars) | `AsyncTavilyClient`, basic depth, `web_max_results` results, wrapped in `asyncio.timeout(web_timeout_s)`; each result's content capped at 1,500 chars. | `ERROR web_unavailable: <reason>. Answer from the 10-K and list this under Data gaps.` |
-| `calculator` | `expression` (≤ 200 chars) | `simpleeval` with no names; result rounded to 6 decimals. | `ERROR invalid_expression: <reason>` |
+| `web_search` | `query` (≤ 300 chars) | `AsyncTavilyClient`, basic depth, `web_max_results` results, wrapped in `asyncio.timeout(web_timeout_s)`; results in Tavily's order, each one's content capped at 1,500 chars. Wrapper tags inside the content, in any case or spacing, are neutralised, so a page cannot close its untrusted block. | `ERROR web_unavailable: <reason>. Answer from the 10-K and list this under Data gaps.` on a timeout or client error; `NO_RELEVANT_CONTENT: the web search returned no results; rephrase the query once, or list it under Data gaps` when Tavily returns nothing. |
+| `calculator` | `expression` (≤ 200 chars) | `simpleeval` with no names and only `round` and `abs` as functions; the result must be a finite number (not a bool) and is rounded to 6 decimals. | `ERROR invalid_expression: <reason>` |
 
 The model sees results in this format, capped at `tool_output_max_chars` per call:
 
@@ -239,7 +239,7 @@ The model sees results in this format, capped at `tool_output_max_chars` per cal
 [C7b2e04] <expression> = <result>
 ```
 
-In 10-K paths, Item headings are shortened to `Item 7`; notes and subsections stay in full. A chunk spanning pages shows `(pp. 13–14)`. The matching Evidence source is `Form 10-K FY2025 › Part II › Item 7 › Gross Margin, p. 23` (the `filing_label` setting, then the same path and pages). When the cap is reached, whole trailing passages are dropped together with their Evidence, so every marker the model sees can be rendered.
+In 10-K paths, Item headings are shortened to `Item 7`; notes and subsections stay in full. A chunk spanning pages shows `(pp. 13–14)`. The matching Evidence source is `Form 10-K FY2025 › Part II › Item 7 › Gross Margin, p. 23` (the `filing_label` setting, then the same path and pages). A web Evidence source is `<title>, <url>, published <date>, retrieved <date>`, without the publish date when Tavily gives none; the model's header still shows `published n/a`, so it can flag the gap. A calculator Evidence source is `<expression> = <result>`, with the expression as the model wrote it. When the cap is reached, whole trailing passages are dropped together with their Evidence, so every marker the model sees can be rendered.
 
 ## 8. Agent Graph
 

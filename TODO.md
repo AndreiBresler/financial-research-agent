@@ -1,17 +1,15 @@
 # TODO
 
-Open action items. Build-step progress is tracked in `STATUS.md`. Last updated 2026-10-27.
+Open action items. Build-step progress is tracked in `STATUS.md`. Last updated 2026-10-29.
 
-## Next: build step 4
+## Next: build step 5
 
-- [ ] Tests first, then implement `web_search`: an `AsyncTavilyClient` wrapper with basic depth, `web_max_results` results and an `asyncio.timeout(web_timeout_s)`. Content is capped at 1,500 characters and wrapped as untrusted, with `W` IDs from a SHA-1 of the URL and `web_unavailable` errors (LLD §7).
-- [ ] Tests first, then implement `calculator`: `simpleeval` with no names, only `round` and `abs`, 6-decimal results, `C` IDs from a SHA-1 of the expression, and `invalid_expression` errors.
-- [ ] Pin `tavily-python` and `simpleeval` in `requirements.txt`.
+- [ ] `log.py`, including the node and tool-call decorator. The tool-call logging deferred from steps 3 and 4 lands here.
+- [ ] In prompt files, write literal dollar signs as `$$`, because `string.Template` treats `$` as a placeholder (see CLAUDE.md).
 
 ## Later build steps
 
-- [ ] Step 5: `log.py`, including the node and tool-call decorator. The tool-call logging deferred from step 3 lands here.
-- [ ] Step 5: in prompt files, write literal dollar signs as `$$`, because `string.Template` treats `$` as a placeholder (see CLAUDE.md).
+- [ ] Step 6: `main.py` builds `AsyncTavilyClient` from `settings.tavily_api_key.get_secret_value()` and passes it to `make_web_search` with `today=date.today`. `tavily-python` ships no type hints, so mypy can't check it against the `WebSearchClient` protocol; the integration tests are the first real check.
 - [ ] Step 6: the CLI startup check should use `stale_reasons` and `missing_credentials()` and exit with code 2.
 - [ ] Step 7: the README must answer the README questions: tool registration, tool choice, information flow and prompt location (HLD §9).
 

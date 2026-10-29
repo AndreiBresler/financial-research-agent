@@ -14,9 +14,9 @@ from pydantic import BaseModel, Field
 from research_agent.models import Chunk, ChunkKind, Evidence
 from research_agent.retrieval.search import NotFound, Searcher
 from research_agent.retrieval.store import ChunkStore
+from research_agent.tools.output import HEADER_SEPARATOR, NO_RELEVANT_CONTENT, Passage, fit_to_limit
 
 TOOL_NAME = "search_10k"
-NO_RELEVANT_CONTENT = "NO_RELEVANT_CONTENT"
 UNKNOWN_SECTION = "ERROR unknown_section"
 MISSING_SECTION = "ERROR missing_section"
 
@@ -34,10 +34,7 @@ DOC_ID_PREFIX = "D"
 
 PATH_SEPARATOR = " › "
 ITEM_HEADING_PATTERN = re.compile(r"^(Item \d+[A-C]?)\.")
-PASSAGE_SEPARATOR = "\n\n"
-HEADER_SEPARATOR = "\n"
 SECTION_LIST_SEPARATOR = ", "
-TRUNCATION_MARK = "…"
 
 
 class SearchTenKArguments(BaseModel):
@@ -97,24 +94,8 @@ def evidence(chunk: Chunk, filing_label: str) -> Evidence:
 
 def render(chunks: list[Chunk], filing_label: str, max_chars: int) -> tuple[str, list[Evidence]]:
     """Format passages within max_chars, dropping whole trailing passages so every marker has its Evidence."""
-    shown_passages: list[str] = []
-    shown_evidence: list[Evidence] = []
-    used_chars = 0
-    for chunk in chunks:
-        formatted = passage(chunk)
-        separator_chars = len(PASSAGE_SEPARATOR) if shown_passages else 0
-        if used_chars + separator_chars + len(formatted) > max_chars:
-            break
-        shown_passages.append(formatted)
-        shown_evidence.append(evidence(chunk, filing_label))
-        used_chars += separator_chars + len(formatted)
-    if not shown_passages and chunks:
-        first_chunk = chunks[0]
-        first_passage = passage(first_chunk)
-        truncated = first_passage[: max_chars - len(TRUNCATION_MARK)] + TRUNCATION_MARK
-        return truncated, [evidence(first_chunk, filing_label)]
-    content = PASSAGE_SEPARATOR.join(shown_passages)
-    return content, shown_evidence
+    passages = [Passage(text=passage(chunk), evidence=evidence(chunk, filing_label)) for chunk in chunks]
+    return fit_to_limit(passages, max_chars)
 
 
 def not_found_message(section: str | None, kind: ChunkKind | None) -> str:

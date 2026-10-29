@@ -89,10 +89,10 @@ General:
 
 ## Cross-file invariants — change both sides together
 
-- **Citation markers.** Tools emit `[D<seq>]`, `[W<6 hex>]` and `[C<6 hex>]` (LLD §7); `verify` matches `\[([DWC][0-9a-f]{1,8})\]` (LLD §9); `system.txt` tells the model to copy markers exactly. IDs are stable, never counters: `D` plus the chunk's `seq`, `W`/`C` plus the first 6 hex characters of a SHA-1 of the URL or expression. That's why parallel tool calls need no shared counter.
+- **Citation markers.** Tools emit `[D<seq>]`, `[W<6 hex>]` and `[C<6 hex>]` (LLD §7); `verify` matches `\[([DWC][0-9a-f]{1,8})\]` (LLD §9); `system.txt` tells the model to copy markers exactly. IDs are stable, never counters: `D` plus the chunk's `seq`, `W`/`C` plus the first 6 hex characters of a SHA-1 of the URL or of the expression with all whitespace removed. That's why parallel tool calls need no shared counter.
 - **The evidence registry is derived** from the `Evidence` artifacts on the `ToolMessage`s in `messages`. Don't add a state field for it. The model never sees artifacts.
 - **Answer headings.** `### Assumptions` and `### Data gaps` (`system.txt` rule 6) mark where the verified body ends, and `render` appends `### Sources`. Renaming one means changing the prompt, `verify` and `render` together.
-- **Tool error strings** (`NO_RELEVANT_CONTENT …`, `ERROR web_unavailable: …`, `ERROR invalid_expression: …`) are read by the model and printed by the CLI. They are instructions to the model as much as error codes.
+- **Tool error strings** (`NO_RELEVANT_CONTENT …` from `search_10k`, and from `web_search` when it gets no results; `ERROR web_unavailable: …`, `ERROR invalid_expression: …`) are read by the model and printed by the CLI. They are instructions to the model as much as error codes.
 - **Section IDs** (`item:1A`, `item:7`, `note:5`) are produced by the parser, accepted by `search_10k`'s `section` argument and listed to the model through `$sections`.
 - **Per-question state reset.** Each question's input resets `plan`, `tool_rounds` and `final`, while `messages` keeps accumulating in the thread (LLD §8). A new per-question field in `AgentState` must be added to that reset.
 - **Recursion limit vs. tool budget.** `recursion_limit=25` is a backstop; a run with `max_tool_rounds` rounds takes `2 × rounds + 3` steps (6 rounds → 15 steps). Going above 11 rounds means raising the limit too.

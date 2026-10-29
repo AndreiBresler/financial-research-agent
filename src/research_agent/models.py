@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 ChunkKind = Literal["text", "risk_factor", "table"]
 ToolName = Literal["search_10k", "web_search", "calculator"]
@@ -55,7 +55,14 @@ class PlanStep(BaseModel):
 class Plan(BaseModel):
     """Plan from the plan node, shown to the user before any tool runs."""
 
-    steps: list[PlanStep] = Field(min_length=1, max_length=MAX_PLAN_STEPS)
+    steps: list[PlanStep] = Field(min_length=1)
+
+    # The structured-output API doesn't enforce a maximum list length, so a longer plan is cut, not rejected.
+    @field_validator("steps")
+    @classmethod
+    def keep_first_steps(cls, steps: list[PlanStep]) -> list[PlanStep]:
+        """Keep the first MAX_PLAN_STEPS steps of a longer plan."""
+        return steps[:MAX_PLAN_STEPS]
 
 
 class Verification(BaseModel):

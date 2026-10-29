@@ -2,13 +2,15 @@
 
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_FILE = ".env"
 TEXT_ENCODING = "utf-8"  # every file the project reads or writes, and text hashed into citation IDs
 ANTHROPIC_KEY_VARIABLE = "ANTHROPIC_API_KEY"
 TAVILY_KEY_VARIABLE = "TAVILY_API_KEY"
+# cli.RECURSION_LIMIT (25) fits 2 × rounds + 3 graph steps; raise both together.
+MAX_TOOL_ROUNDS_LIMIT = 11
 
 
 class Settings(BaseSettings):
@@ -41,7 +43,7 @@ class Settings(BaseSettings):
     # Tools and agent limits
     web_max_results: int = 5
     web_timeout_s: float = 10
-    max_tool_rounds: int = 6
+    max_tool_rounds: int = Field(default=6, ge=1, le=MAX_TOOL_ROUNDS_LIMIT)
     tool_output_max_chars: int = 12_000
     question_max_chars: int = 2_000
     # Agent files

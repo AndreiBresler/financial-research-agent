@@ -1,107 +1,93 @@
 # Example outputs
 
+Answers from the latest full `pytest -m e2e` run, the assignment's two queries first. Each answer is shown as the CLI renders it: any verification warning, the answer, then the Sources list written by code.
+
 ## query_1_document_only
 
 **Question:** What are Apple's top 3 risk factors mentioned in their latest 10-K, and what percentage of total revenue did they spend on R&D?
 
 **Tools:** search_10k, calculator · **Result:** passed
 
-Apple's first three risk factors in its fiscal 2025 10-K are economic conditions, political and trade disruptions, and competition. R&D was about 8.3% of total net sales in fiscal 2025 [C3bd255].
+Apple's R&D spending was about 8.3% of total net sales in fiscal 2025 [C3bd255]. The first three risk factors the filing lists are macroeconomic conditions, political and geopolitical events, and competition.
 
-**Top 3 risk factors (the first three in Item 1A's order)**
-1. **Global and regional economic conditions.** Apple's operations and performance depend significantly on them. Sales outside the U.S. are a majority of total net sales, and adverse conditions can materially hurt demand, suppliers and financial results [D25].
-2. **Political events, trade disputes, geopolitical tensions, natural disasters and other business interruptions.** The filing says these can materially affect Apple, its suppliers and its channel partners [D26]. It highlights tariffs: new U.S. Tariffs were announced beginning in the second quarter of 2025, and several countries have threatened or imposed reciprocal tariffs [D32]. It also notes a significant majority of manufacturing is outsourced, primarily in China mainland, India, Japan, South Korea, Taiwan and Vietnam [D27].
-3. **Highly competitive markets with rapid technological change.** Apple says it may be unable to compete effectively. It must make significant investments in R&D that may not achieve expected returns [D38].
+**Top 3 risk factors (in filing order)**
+1. **Global and regional economic conditions.** Apple's operations depend significantly on these conditions, and sales outside the U.S. are a majority of total net sales. A majority of supplier facilities are also outside the U.S. [D25]
+2. **Political events, trade disputes and geopolitical tensions.** These can have a material adverse effect on Apple and its customers, employees, suppliers, contract manufacturers and channel partners. The list includes conflict, terrorism, natural disasters, public health issues and industrial accidents [D26].
+3. **Competition and rapid technological change.** Apple's markets are highly competitive, with aggressive price competition and short product life cycles. Apple must make significant R&D investments that may not achieve expected returns [D38].
 
-**R&D as a share of total net sales (fiscal 2025, in millions of dollars)**
-- R&D expense was $34,550 million [D115].
-- Total net sales were $416,161 million [D108].
-- R&D divided by net sales is about 8.3% [C3bd255]. The filing's own table rounds this to 8% [D115].
+**R&D as a share of revenue**
+- Fiscal 2025 research and development expense was $34,550 million [D135].
+- Fiscal 2025 total net sales were $416,161 million [D135].
+- The share is 34,550 / 416,161 × 100 = 8.3% [C3bd255]. The filing reports the same 8% for fiscal 2025 [D115].
 
 ### Assumptions
-- "Top 3" means the first three risk factors in the order Item 1A lists them. The filing doesn't rank them by importance.
-- "Total revenue" means total net sales.
-- The 10-K lists the three risk factors above under "Macroeconomic and Industry Risks" [D25][D26][D38].
+- "Top 3" means the first three risk factors in the order the filing lists them. I did not rank them by prominence or detail, so the list may differ from a ranking by emphasis.
+- "Total revenue" is taken as total net sales, which is Apple's reported top-line figure.
+
+### Data gaps
+- I did not check whether the 10-K's risk factor summary (if any) ranks these risks differently from the order of the full risk factor text.
 
 ### Sources
 - [C3bd255] 34550 / 416161 * 100 = 8.302075
 - [D25] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 5
 - [D26] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
-- [D32] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
-- [D27] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
 - [D38] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 7
+- [D135] Form 10-K FY2025 › Part II › Item 8 › CONSOLIDATED STATEMENTS OF OPERATIONS, p. 29
 - [D115] Form 10-K FY2025 › Part II › Item 7 › Operating Expenses, p. 24
-- [D108] Form 10-K FY2025 › Part II › Item 7 › Products and Services Performance, p. 23
 
 ## query_2_hybrid
 
 **Question:** How does Apple's gross margin compare to Microsoft's current gross margin, and what reasons does Apple cite in their 10-K for any margin pressure?
 
-**Tools:** search_10k, web_search, calculator · **Result:** passed · **Citation warnings:** 8
+**Tools:** search_10k, web_search, calculator · **Result:** passed · **Citation warnings:** 1
 
 > **Verification warning:** some claims could not be tied to a source.
-> - Uncited: That comment comes from Microsoft's fiscal 2026 Q3 results page.
-> - Uncited: Pricing pressure and competition.
-> - Uncited: Supply shortages.
-> - Uncited: Higher costs for components, outside manufacturing and content.
-> - Uncited: Shifts in product, service, geographic, currency or channel mix.
-> - …and 3 more
+> - Uncited: **Apple's fiscal 2025 gross margin was 46.9%, well below Microsoft's most recent quarter at about 6…
 
-Apple's gross margin is about 20 percentage points below Microsoft's. Apple's was 46.9% in fiscal 2025 [D112][C8b384d]. Microsoft's was 67.2% in its latest quarter, the quarter ended June 2026 [W535a1c][C99fc3e]. That is a gap of 20.3 points [Ceb3ee5]. Apple's 10-K cites tariff costs, product mix, foreign exchange, component costs and other factors as sources of margin pressure [D113][D71].
+**Apple's fiscal 2025 gross margin was 46.9%, well below Microsoft's most recent quarter at about 67.2%.** Apple's margin pressure came mainly from a shift in product mix and tariff costs, partly offset by favorable costs. The gap is about 20.3 percentage points against Microsoft's quarter, or about 21.0 points against Microsoft's full fiscal 2026 year.
 
-### Apple (fiscal year ended Sept 27, 2025, $ millions)
-- Total net sales were $416,161 [D108].
-- Total gross margin was $195,201, or 46.9% of net sales [D111][D112][C8b384d].
-- Products gross margin was $112,887, or 36.8%, down from 37.2% in 2024 [D111][D112].
-- Services gross margin was $82,314, or 75.4%, up from 73.9% in 2024 [D111][D112].
+**Apple (fiscal 2025, ended September 27, 2025)**
+- Total gross margin was $195,201 million on net sales of $416,161 million [D135].
+- The total gross margin percentage was 46.9%, up from 46.2% in fiscal 2024 [D112].
+- Products gross margin percentage was 36.8%, down from 37.2%. Services was 75.4%, up from 73.9% [D112].
+- Apple attributes the products margin percentage decline "primarily" to "a different mix of products and tariff costs, partially offset by other favorable costs." Products gross margin dollars rose on "favorable costs and a different mix of products, partially offset by tariff costs" [D113].
+- Services margin percentage rose on "a different mix of services, partially offset by higher costs" [D113].
+- Apple's tariff discussion says tariffs on products or their components can have a material adverse impact on "pricing and gross margin." It names new U.S. tariffs on imports from China, India, Japan, South Korea, Taiwan, Vietnam and the EU, and a Section 232 investigation into semiconductors [D103].
+- Apple's risk factors list further drivers of gross margin volatility and downward pressure. These include industry-wide pricing pressure, competition, compressed product life cycles, supply shortages, component and content cost increases, product and service mix, foreign exchange, inflation, tariffs, and new products with lower margins [D71].
+- Apple says it "believes, in general, gross margins will be subject to volatility and downward pressure" [D113].
 
-### Microsoft (web data)
-- Microsoft's quarter ended June 2026 had gross profit of $60,482 million on revenue of $90,007 million, a 67.2% gross margin [W535a1c].
-- The same quarter's margin was down 1.4 percentage points from a year earlier [W698586].
-- Microsoft's fiscal year ended June 2025 had a gross margin of 68.8%. That is closer in time to Apple's fiscal 2025, and it is 21.9 points above Apple's 46.9% [W7a8b6f][C9ff41b].
-- Microsoft's gross margin percentage decreased because of continued investments in AI infrastructure and growing AI product usage, partly offset by efficiency gains [W114c97]. That comment comes from Microsoft's fiscal 2026 Q3 results page.
+**Microsoft (most recent reported period: fiscal Q4 2026, ended June 30, 2026)**
+- Revenue was $90.0 billion and gross margin was $60,482 million [We7406b].
+- Calculated from those figures, the quarterly gross margin percentage is 67.2% [C99fc3e].
+- For the full fiscal 2026 year, gross margin was $225,465 million on revenue of $331,839 million, or 67.9% [C4fb787]. The annual revenue figure comes from a third-party data page [W535a1c], and the gross margin figure from Microsoft's release [We7406b].
+- Microsoft's Microsoft Cloud gross margin percentage fell to 66% in fiscal Q3 2026. Microsoft attributed this to "continued investments in AI infrastructure and growing AI product usage" [W114c97].
 
-### Reasons Apple cites for margin pressure in the 10-K
-- **Products margin percentage fell in 2025.** Apple attributes the decline primarily to a different mix of products and to tariff costs, partly offset by other favorable costs [D113].
-- **Services costs.** The Services gross margin percentage rose, but Apple says a different mix of services was partly offset by higher costs [D113].
-- **Tariffs.** New U.S. tariffs were announced beginning in the second quarter of 2025, and several countries have threatened or imposed retaliatory tariffs. Apple says tariffs can materially affect its supply chain, pricing and gross margin, and that the ultimate impact is uncertain [D103].
-- **Forward-looking view.** Apple says that in general its gross margins will be subject to volatility and downward pressure [D113].
-- **Risk factors.** The list of factors includes:
-  - Pricing pressure and competition.
-  - Supply shortages.
-  - Higher costs for components, outside manufacturing and content.
-  - Shifts in product, service, geographic, currency or channel mix.
-  - Foreign exchange fluctuations.
-  - Inflation.
-  - New tariffs.
-  - New products with lower margins [D71].
-- **Foreign exchange.** Apple says a weaker foreign currency can hurt the U.S. dollar value of its sales and margins. A stronger foreign currency can raise component costs [D72].
-- **Component supply.** Apple says it faces supply and pricing risk because it sources some components from single or limited suppliers [D43].
+**Comparison**
+- Quarterly gap: 67.2% − 46.9% = 20.3 percentage points [C5168e7].
+- Full-year gap: 67.9% − 46.9% = 21.0 percentage points [C4329bb].
 
 ### Assumptions
-- Apple's total gross margin percentage is total gross margin divided by total net sales.
-- Microsoft's fiscal year ends in June, so its periods don't line up with Apple's September year-end. I used its latest quarter as "current" and its fiscal 2025 margin as the closest period to Apple's.
+- Apple's figures are for its full fiscal year. The Microsoft figure I used is its most recent quarter, which is the closest like-for-like period available. I also show Microsoft's full fiscal 2026 year for comparison.
+- Both gross margin percentages are calculated as gross margin divided by total revenue. Microsoft does not state a gross margin percentage in the excerpts I retrieved, so I calculated it from its reported figures.
+- Apple and Microsoft have different business models and cost structures, so the gap reflects that, not a like-for-like efficiency comparison.
 
 ### Data gaps
-- The Microsoft figures come from third-party aggregator pages, not Microsoft's own filings, so they are unverified.
+- I did not retrieve Microsoft's own 10-K or its stated gross margin percentage. The Microsoft figures come from its press release and third-party data pages.
+- I did not find an Apple quantification of how much tariffs reduced its gross margin in fiscal 2025.
 
 ### Sources
+- [D135] Form 10-K FY2025 › Part II › Item 8 › CONSOLIDATED STATEMENTS OF OPERATIONS, p. 29
 - [D112] Form 10-K FY2025 › Part II › Item 7 › Gross Margin, p. 24
-- [C8b384d] 195201 / 416161 * 100 = 46.905164
-- [W535a1c] MICROSOFT Gross Margin %: 67.20% — Near Median | GuruFocus, https://www.gurufocus.com/term/gross-margin/MSFT, retrieved 2026-10-29
-- [C99fc3e] 60482 / 90007 * 100 = 67.196996
-- [Ceb3ee5] 67.2 - 46.9 = 20.3
 - [D113] Form 10-K FY2025 › Part II › Item 7 › Gross Margin, p. 24
-- [D71] Form 10-K FY2025 › Part I › Item 1A › Financial Risks, p. 15
-- [D108] Form 10-K FY2025 › Part II › Item 7 › Products and Services Performance, p. 23
-- [D111] Form 10-K FY2025 › Part II › Item 7 › Gross Margin, p. 24
-- [W698586] Microsoft Corporation (MSFT) Earnings & Analysis — stockrow, https://stockrow.com/MSFT/earnings, retrieved 2026-10-29
-- [W7a8b6f] Gross Profit Margin For Microsoft Corporation (MSFT), https://finbox.com/NASDAQGS:MSFT/explorer/gp_margin, retrieved 2026-10-29
-- [C9ff41b] 68.8 - 46.9 = 21.9
-- [W114c97] FY26 Q3 - Performance - Investor Relations - Microsoft, https://www.microsoft.com/en-us/investor/earnings/fy-2026-q3/performance, retrieved 2026-10-29
 - [D103] Form 10-K FY2025 › Part II › Item 7 › Tariffs and Other Measures, p. 22
-- [D72] Form 10-K FY2025 › Part I › Item 1A › Financial Risks, pp. 15–16
-- [D43] Form 10-K FY2025 › Part I › Item 1A › Business Risks, p. 8
+- [D71] Form 10-K FY2025 › Part I › Item 1A › Financial Risks, p. 15
+- [We7406b] FY26 Q4 - Press Releases - Investor Relations - Microsoft, https://www.microsoft.com/en-us/investor/earnings/fy-2026-q4/press-release-webcast, retrieved 2026-10-29
+- [C99fc3e] 60482 / 90007 * 100 = 67.196996
+- [C4fb787] 225465 / 331839 * 100 = 67.944093
+- [W535a1c] MICROSOFT Gross Margin %: 67.20% — Near Median | GuruFocus, https://www.gurufocus.com/term/gross-margin/MSFT, retrieved 2026-10-29
+- [W114c97] FY26 Q3 - Performance - Investor Relations - Microsoft, https://www.microsoft.com/en-us/investor/earnings/fy-2026-q3/performance, retrieved 2026-10-29
+- [C5168e7] 60482 / 90007 * 100 - 195201 / 416161 * 100 = 20.291832
+- [C4329bb] 225465 / 331839 * 100 - 195201 / 416161 * 100 = 21.038929
 
 ## risk_factors_document_only
 
@@ -109,84 +95,69 @@ Apple's gross margin is about 20 percentage points below Microsoft's. Apple's wa
 
 **Tools:** search_10k · **Result:** passed
 
-Apple's fiscal 2025 Form 10-K groups its risk factors into five categories: macroeconomic and industry, business, legal and regulatory, financial, and general. The list below covers only the risk factors I retrieved. Several others in the filing, including data-security breaches, competition and retail, were not retrieved. Market-risk figures from Item 7A follow the list. [D25][D41][D61][D71][D77][D128]
+Apple's fiscal 2025 10-K lists risks in five groups: macroeconomic and industry, business operations, financial, legal and regulatory, and cybersecurity and data. The most prominent are weak global economic conditions, trade restrictions and tariffs, intense competition, supply concentration, and a growing body of antitrust and privacy regulation [D25][D28][D38][D43][D66][D61].
 
-### Macroeconomic and industry risks
-- **Economic conditions:** Sales outside the U.S. are a majority of net sales, and most supplier facilities are outside the U.S. Slow growth, inflation, tighter credit, higher interest rates and currency swings can reduce demand. [D25]
-- **Geopolitical events and disasters:** Political events, trade disputes, conflict, terrorism, natural disasters, public health issues and industrial accidents can disrupt Apple, its suppliers and its channel partners. Many operations and suppliers are in locations prone to earthquakes and other natural disasters. [D26][D36]
-- **Trade restrictions and tariffs:** Most manufacturing is done by outsourcing partners, primarily in China mainland, India, Japan, South Korea, Taiwan and Vietnam. [D27]
-  - Tariffs and export or import controls can raise costs, limit availability of components and products, and force supply chain changes. [D28][D29]
-  - New U.S. tariffs were announced beginning in the second quarter of 2025, and other countries have imposed or threatened reciprocal tariffs. A Section 232 investigation into semiconductors is also under way. [D32][D33]
-  - The ultimate impact is uncertain. [D34]
-- **Single or limited sources:** Apple relies on single or limited sources for many critical components, so a business interruption at one of them would worsen the consequences. Insurance may not cover all losses. [D37]
+**Macroeconomic and industry risks**
+- **Economic conditions:** Sales outside the U.S. are a majority of net sales, and most supplier facilities are outside the U.S. Slow growth, inflation, tighter credit, higher rates and currency moves can reduce demand and strain suppliers and channel partners [D25].
+- **Trade and geopolitics:** Tariffs and other trade controls can disrupt the supply chain and raise prices. Restrictions can be announced with little notice, and a concentrated supply chain makes Apple exposed to geopolitical escalation [D28][D29][D31].
+- **Political events and disasters:** Trade disputes, conflict, terrorism, natural disasters, public health events and industrial accidents can disrupt Apple and its partners [D26][D36][D37].
+- **Competition and technology:** Markets are highly competitive, with price pressure, short product life cycles and rapid technological change. Apple's ability to compete depends on continued innovation and on protecting its intellectual property [D38].
 
-### Business risks
-- **Product and service transitions:** Apple must keep introducing and transitioning products and services. New offerings may replace existing ones at lower revenue and margin. [D41]
-- **Component supply:** Apple gets some components from single or limited sources, and shortages and price swings can occur. Its new products often use custom components available from only one source. [D43]
-- **Defects and quality:** Hardware, software and service defects can lead to product liability claims, recalls and reputational harm. New technologies such as AI features can add safety risks. [D45]
-- **Third-party intellectual property:** Apple licenses technology from third parties and may be alleged to infringe others' rights. Machine learning and AI add to this risk, for example through the use of copyrighted training materials. [D47]
-- **IT failures and network disruptions:** Apple and its supply chain depend on complex IT systems. Failures from ransomware, other cyber incidents or other causes can disrupt online services, transactions and manufacturing. [D53]
+**Business risks**
+- **Product transitions:** Apple must manage frequent product launches and transitions, production ramps and inventory levels, and new products may lower margins [D41].
+- **Outsourced manufacturing:** Most hardware is made by partners in China mainland, India, Japan, South Korea, Taiwan and Vietnam, and final assembly is largely in Asia. Apple relies on single-source suppliers for many components, and this reduces direct control [D42].
+- **Components:** Shortages, commodity price swings and single-source custom parts can constrain supply and raise costs [D43].
+- **Defects:** Hardware, software and service defects can lead to recalls, warranty costs, litigation and reputational harm. AI features are cited as adding to these risks [D44][D45].
+- **IT systems:** Failures, network disruptions, ransomware and other cyber incidents could disrupt online services, transactions and manufacturing [D53].
 
-### Legal and regulatory risks
-- **Complex and changing laws:** Apple faces onerous and expensive compliance across many areas. These include antitrust, privacy, online safety, AI, trade and tax. [D61]
-- **Regulatory scrutiny and antitrust:** The technology industry faces intense regulatory scrutiny. [D64]
-  - In the U.S., Apple is subject to a court order barring it from charging any commission or fee on certain App Store purchases. [D64]
-  - Apple faces U.S. civil antitrust suits alleging monopolization in smartphone markets, and investigations in Europe and elsewhere over App Store terms. [D66]
-- **EU Digital Markets Act (DMA):** Apple has changed iOS, the App Store and Safari in the EU. The European Commission has challenged its compliance plan, and the DMA provides for significant fines. [D65]
-- **Google licensing revenue:** Apple earns revenue from search licensing arrangements with Google. Google was found to have violated U.S. antitrust laws, and the court ordered remedies on September 2, 2025. Those remedies are subject to further proceedings and appeal. If the remedies the DOJ originally proposed were imposed, they could materially hurt this revenue. [D67]
-- **Privacy and data protection:** Compliance with personal-data laws is costly, and noncompliance can bring penalties. Rules on minors' data and sensitive data (health, biometric, financial) and on online safety and age verification add to the burden. [D69][D70]
+**Financial risks**
+- **Margins and sales volatility:** Net sales and gross margins face pressure from pricing, competition, component costs, mix, foreign exchange and tariffs. The filing also notes that a significant share of net sales comes from a single product category [D71].
 
-### Financial risks
-- **Net sales and gross margin volatility:** Margins face downward pressure from pricing, competition, component costs, mix shifts, foreign exchange, tariffs and new lower-margin products. A significant portion of net sales comes from a single product category. [D71]
-- **U.S. dollar and foreign exchange:** A weaker foreign currency reduces the dollar value of foreign sales and earnings. Hedging may not offset more than part of the adverse effects. [D72][D73]
-- **Credit and investment portfolio:** The value and liquidity of Apple's cash and marketable securities can fluctuate substantially. [D74]
-- **Taxes:** Tax rates and laws, including OECD global minimum tax proposals, can change. Apple is also subject to tax examinations. [D76]
+**Legal and regulatory risks**
+- **Complex and changing laws:** Apple is subject to rules on antitrust, privacy, online safety, age verification, AI, tax, trade and other areas. Compliance is costly, and violations could be material [D61].
+- **Antitrust:** Apple faces U.S. civil antitrust suits over smartphone markets and investigations in Europe and elsewhere over App Store terms [D66].
+- **EU Digital Markets Act:** Apple has changed iOS, the App Store and Safari in the EU to comply, and the Commission has challenged that compliance plan. The DMA provides for significant fines [D65].
+- **U.S. App Store:** Apple is subject to a court order barring it from imposing commissions or fees on certain purchases [D64].
+- **Google search revenue:** Apple's licensing revenue from Google search arrangements could be hurt if the remedies in the Google antitrust case are changed on appeal [D67].
+- **Patents and other litigation:** Apple faces numerous patent claims tied to standards-enabled products, and claims may increase with AI integration [D58].
+- **Privacy and data:** Apple faces growing personal-data laws, with extra obligations for minors' data and sensitive health, biometric and payment data [D69][D70].
 
-### General risks
-- **Stock price volatility:** The stock has been volatile. A failure to meet expectations on growth, profitability, dividends or buybacks could cause a significant decline. [D77]
-
-### Market risk disclosures (Item 7A)
-- **Interest rates:** A 100 basis point rise in rates would reduce the fair value of the investment portfolio by $2,416 million, versus $2,755 million in fiscal 2024. It would also raise annual term-debt interest expense by $129 million, versus $139 million in fiscal 2024. [D130]
-- **Foreign exchange:** Apple is a net receiver of non-U.S. dollar currencies, so a stronger dollar hurts net sales and gross margins. The estimated maximum one-day loss on its currency derivatives, at 95% confidence, was $590 million at September 27, 2025, versus $538 million a year earlier. [D131]
+**Cybersecurity and data**
+- **Data breaches:** Losses of or unauthorized access to confidential information could cause reputational, financial and legal harm. Suppliers are also exposed to ransomware and other attacks [D54].
 
 ### Assumptions
-- I treated the filing's own category headings as the structure. I did not rank the risks by importance.
+- "Principal" risks means the order in which Item 1A presents them, as retrieved. Apple does not rank them by importance. The first risk in the filing is the global economic conditions risk [D25].
+- The category groupings are my own, based on the headings Apple uses in Item 1A (Macroeconomic and Industry, Business, Financial, Legal and Regulatory).
 
 ### Data gaps
-- The retrieval returned only part of Item 1A. I did not retrieve the other business risks, such as competition, cybersecurity and data breaches, reliance on outsourcing partners and carriers, retail and talent. Nor did I retrieve the remaining general risks. Say if you want those covered.
+- **Changes versus prior filings:** I only retrieved the fiscal 2025 10-K. I could not compare its risk factors with fiscal 2024 or earlier filings, so I cannot say what is new or has changed in emphasis.
+- **Partial coverage:** I did not retrieve the full text of every risk factor. The risks on key personnel, retail operations, tax, debt and foreign exchange were not checked separately.
 
 ### Sources
 - [D25] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 5
-- [D41] Form 10-K FY2025 › Part I › Item 1A › Business Risks, p. 8
+- [D28] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
+- [D38] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 7
+- [D43] Form 10-K FY2025 › Part I › Item 1A › Business Risks, p. 8
+- [D66] Form 10-K FY2025 › Part I › Item 1A › Legal and Regulatory Compliance Risks, p. 14
 - [D61] Form 10-K FY2025 › Part I › Item 1A › Legal and Regulatory Compliance Risks, p. 13
-- [D71] Form 10-K FY2025 › Part I › Item 1A › Financial Risks, p. 15
-- [D77] Form 10-K FY2025 › Part I › Item 1A › General Risks, p. 17
-- [D128] Form 10-K FY2025 › Part II › Item 7A, p. 27
+- [D29] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
+- [D31] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
 - [D26] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
 - [D36] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
-- [D27] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
-- [D28] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
-- [D29] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
-- [D32] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
-- [D33] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
-- [D34] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 6
 - [D37] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, pp. 6–7
-- [D43] Form 10-K FY2025 › Part I › Item 1A › Business Risks, p. 8
+- [D41] Form 10-K FY2025 › Part I › Item 1A › Business Risks, p. 8
+- [D42] Form 10-K FY2025 › Part I › Item 1A › Business Risks, p. 8
+- [D44] Form 10-K FY2025 › Part I › Item 1A › Business Risks, p. 9
 - [D45] Form 10-K FY2025 › Part I › Item 1A › Business Risks, p. 9
-- [D47] Form 10-K FY2025 › Part I › Item 1A › Business Risks, p. 9
 - [D53] Form 10-K FY2025 › Part I › Item 1A › Business Risks, p. 11
-- [D64] Form 10-K FY2025 › Part I › Item 1A › Legal and Regulatory Compliance Risks, p. 14
-- [D66] Form 10-K FY2025 › Part I › Item 1A › Legal and Regulatory Compliance Risks, p. 14
+- [D71] Form 10-K FY2025 › Part I › Item 1A › Financial Risks, p. 15
 - [D65] Form 10-K FY2025 › Part I › Item 1A › Legal and Regulatory Compliance Risks, p. 14
+- [D64] Form 10-K FY2025 › Part I › Item 1A › Legal and Regulatory Compliance Risks, p. 14
 - [D67] Form 10-K FY2025 › Part I › Item 1A › Legal and Regulatory Compliance Risks, p. 14
+- [D58] Form 10-K FY2025 › Part I › Item 1A › Legal and Regulatory Compliance Risks, p. 12
 - [D69] Form 10-K FY2025 › Part I › Item 1A › Legal and Regulatory Compliance Risks, p. 15
 - [D70] Form 10-K FY2025 › Part I › Item 1A › Legal and Regulatory Compliance Risks, p. 15
-- [D72] Form 10-K FY2025 › Part I › Item 1A › Financial Risks, pp. 15–16
-- [D73] Form 10-K FY2025 › Part I › Item 1A › Financial Risks, p. 16
-- [D74] Form 10-K FY2025 › Part I › Item 1A › Financial Risks, p. 16
-- [D76] Form 10-K FY2025 › Part I › Item 1A › Financial Risks, p. 16
-- [D130] Form 10-K FY2025 › Part II › Item 7A › Interest Rate Risk, p. 27
-- [D131] Form 10-K FY2025 › Part II › Item 7A › Foreign Exchange Rate Risk, p. 27
+- [D54] Form 10-K FY2025 › Part I › Item 1A › Business Risks, p. 11
 
 ## stock_price_web_only
 
@@ -195,104 +166,96 @@ Apple's fiscal 2025 Form 10-K groups its risk factors into five categories: macr
 **Tools:** web_search · **Result:** passed · **Citation warnings:** 1
 
 > **Verification warning:** some claims could not be tied to a source.
-> - Uncited: Apple (AAPL) was trading at about $345–$348 per share in the latest web snapshots, which were retri…
+> - Uncited: Because these quotes come from different times and sources, treat them as approximate. Check a brok…
 
-Apple (AAPL) was trading at about $345–$348 per share in the latest web snapshots, which were retrieved around 2026-10-29. The sources don't agree exactly, because they were captured at different moments and some are delayed.
+Apple's stock was about **$350.33** per share in the most recent quote I found, as of 2026-10-29 19:17 UTC, though sources disagree by a few dollars [Wdd2af1]. The quote was a regular-session price, up $6.51 (1.89%) on the day [Wdd2af1].
 
-- One snapshot showed $347.59, down 0.22% on the day. It was labelled "Market closed," and the previous close was $348.34 [We49fad].
-- Investing.com pages showed $347.10 and $347.73 [Waaa071][W970c10].
-- Robinhood showed $345.66 as of 2026-10-28, within a day range of $343.53–$347.20 [W35893d].
-- A different Kraken snapshot showed $339.34, up 0.83% on the day, with a previous close of $336.55. It looks older than the others [Wc45e96].
-- The 52-week range was $243.42 to $351.73, and market capitalization was about $5.0T [W35893d][We49fad].
+Other recent quotes in the same window:
+- MarketWatch showed $349.33, against a previous close of $343.83 [Wb65440].
+- Robinhood showed $345.66 as of 2026-10-28 [W35893d].
+
+Because these quotes come from different times and sources, treat them as approximate. Check a brokerage or exchange feed for a live price.
 
 ### Assumptions
-- I treated the roughly $347 figures as the most recent close. Several sources agree on that level, and one is explicitly labelled "Market closed."
+- "Current" means the latest quote in my search results, which were retrieved on 2026-10-29. I did not confirm the time of any quote beyond what each source printed.
 
 ### Data gaps
-- None of the pages gave an exact timestamp. For a trading decision, check a live quote from your broker.
+- I could not confirm a single authoritative real-time price, since the sources show different values and timestamps.
+- The 10-K does not report share prices, so this answer relies only on web data.
 
 ### Sources
-- [We49fad] Apple (AAPL) Stock price today - quote & chart, https://www.kraken.com/stocks/aapl, retrieved 2026-10-29
-- [Waaa071] Apple Stock Price Today | NASDAQ: AAPL Live - Investing.com, https://www.investing.com/equities/apple-computer-inc?GL_Ad_ID=592783804277&GL_Campaign_ID=16886355002&ISP=1, retrieved 2026-10-29
-- [W970c10] Apple Share Price Today | NASDAQ AAPL Stock - Investing.com AU, https://au.investing.com/equities/apple-computer-inc, retrieved 2026-10-29
+- [Wdd2af1] Apple Inc. (AAPL) Stock Price, News, Quote & History - Yahoo Finance, https://finance.yahoo.com/quote/AAPL, retrieved 2026-10-29
+- [Wb65440] AAPL Stock Price | Apple Inc. Stock Quote (U.S.: Nasdaq) | MarketWatch, https://www.marketwatch.com/investing/stock/aapl, retrieved 2026-10-29
 - [W35893d] Buy or Sell Apple Stock - AAPL Stock Price Quote & News | Robinhood, https://robinhood.com/us/en/stocks/AAPL, retrieved 2026-10-29
-- [Wc45e96] Apple (AAPL) Stock price today - quote & chart, https://www.kraken.com/stocks/aapl#:~:text=The Apple Inc.,previous closing price was $254.37., retrieved 2026-10-29
 
 ## pe_ratio_document_and_web
 
 **Question:** How does Apple's P/E ratio compare to Microsoft?
 
-**Tools:** web_search, search_10k, calculator · **Result:** passed
+**Tools:** search_10k, web_search, calculator · **Result:** passed
 
-Apple trades at a higher trailing P/E than Microsoft: about 39.9x against 29.3x in late October 2026. That is roughly 10.6 points, or about 36%, higher [Wfc38f4][W289eed][Cfd6ca0][C79e335].
+**Apple trades at a higher P/E than Microsoft on the basis you asked for.** Using Apple's fiscal 2025 diluted EPS and Microsoft's trailing twelve-month EPS, Apple's P/E is about 46.3x and Microsoft's is about 29.2x, a gap of roughly 17 turns [C56773e]. On a matched fiscal-year basis (both companies' fiscal 2025 diluted EPS), Microsoft is about 38.4x [Ca680fd], still below Apple's 46.3x.
 
-**Current trailing P/E (late October 2026 web data)**
-- Apple's P/E is 39.86 as of Oct. 24, 2026. This uses a share price of $347.725 and trailing-twelve-month diluted EPS of $8.72 for the period ended June 2026 [Wfc38f4].
-- Microsoft's trailing P/E is 29.25, with trailing EPS of 17.95 [W289eed].
-- The gap is 10.61 P/E points, so Apple trades at about a 36.3% premium to Microsoft [Cfd6ca0][C79e335].
-- A second source pair gives a similar result. It shows Apple at 39.3 on Oct. 26, 2026 and Microsoft at 29.14 on Oct. 23, 2026, a premium of about 34.9% [Wd0998d][W22c5db][C895b30].
+**Apple**
+- Fiscal 2025 diluted EPS was $7.46 on net income of $112,010 million [D136][D172].
+- Share price was $345.66 as of 2026-10-28 [W35893d].
+- P/E = 345.66 / 7.46 = 46.3x [Ceec3a6].
+- Third-party trailing P/E figures are lower, around 34x to 40x, because they use a newer trailing EPS [W4b9a45][W01e33f].
 
-**Context**
-- Apple's P/E is near the top of its 10-year range of 12.19 to 42.11. It is 45% above its historical median of 27.53 [Wfc38f4].
-- Microsoft's P/E fell to 22.22 at 6/30/2026 and has since recovered to 27.74 on Yahoo's "Current" figure [W9c54a6].
-
-**Check against the 10-K**
-- Apple's reported fiscal 2025 diluted EPS (year ended Sept. 27, 2025) was $7.46 [D136][D172].
-- Dividing the $347.725 share price by that older EPS gives about 46.6x [C252058]. The 39.86 quoted P/E is lower because it uses the more recent trailing EPS of $8.72 [Wfc38f4].
+**Microsoft**
+- Share price was $524.347 as of 2026-10-29, with trailing twelve-month diluted EPS of $17.95 [W6dacb9].
+- P/E = 524.347 / 17.95 = 29.2x [C638c7c]. The source itself reports 29.22 [W6dacb9].
+- Microsoft's fiscal 2025 (year ended June 30, 2025) diluted EPS was $13.64 [W244017]. On that figure its P/E is 38.4x [Ca680fd].
 
 ### Assumptions
-- I used each source's "trailing twelve months" P/E as the headline figure.
-- I paired Apple's GuruFocus figure with Microsoft's Yahoo Finance figure. Quote dates differ by a few days across sources.
+- P/E is share price divided by diluted EPS, as the question's method specifies. I used the filing's fiscal 2025 EPS for Apple, which is a trailing figure as of September 2025, against a current share price.
+- The Microsoft trailing EPS of $17.95 comes from a third-party site. Its label says "ended Sep. 2026," but Microsoft's fiscal year ends in June. Its quarterly GAAP diluted EPS figures sum to about $17.96 for the four quarters through June 2026 [W67590c], so I treated $17.95 as the current trailing figure.
+- The Apple price is one of several quotes for the same date. They ranged from $343.79 to $347.11 [W01e33f][W4b9a45][W35893d]. I used $345.66; the P/E moves by less than 0.5 turn across that range.
+- The fiscal 2025 comparison is not like-for-like in time. Apple's fiscal 2025 ended September 2025, while Microsoft's ended June 2025. Its trailing figure is more current.
 
 ### Data gaps
-- I did not find Microsoft's exact quote date on the Yahoo page. Trailing P/E values differ slightly by provider, from 29.14 to 29.25 for Microsoft.
-- I did not verify Microsoft's EPS against its own filings.
-- Trailing P/E does not reflect differences in growth, margins or fiscal year-ends. Apple's fiscal year ends in September and Microsoft's in June.
+- No primary-source Microsoft filing for the period after June 2025 is in the 10-K. The Microsoft trailing EPS and share prices come from web sources and could not be checked against Microsoft's own filings.
+- The web sources give different trailing EPS values for Microsoft: $17.37 in one line of the same GuruFocus page and $17.95 in another [W6dacb9].
+- The Apple price and P/E pulled from the web are dated late October 2026, so they are not tied to the filing's date.
 
 ### Sources
-- [Wfc38f4] AAPL PE Ratio (TTM): 39.86 — 45% Above Median | GuruFocus, https://www.gurufocus.com/term/pettm/AAPL, retrieved 2026-10-29
-- [W289eed] Microsoft Corporation (MSFT) Stock Price, News, Quote & History - Yahoo Finance, https://finance.yahoo.com/quote/MSFT, retrieved 2026-10-29
-- [Cfd6ca0] 39.86 - 29.25 = 10.61
-- [C79e335] (39.86 / 29.25 - 1) * 100 = 36.273504
-- [Wd0998d] AAPL - Apple PE ratio, current and historical analysis, https://fullratio.com/stocks/nasdaq-aapl/pe-ratio, retrieved 2026-10-29
-- [W22c5db] Microsoft PE ratio, current and historical analysis, https://fullratio.com/stocks/nasdaq-msft/pe-ratio, retrieved 2026-10-29
-- [C895b30] (39.3 / 29.14 - 1) * 100 = 34.866163
-- [W9c54a6] Microsoft Corporation (MSFT) Valuation Measures & Financial Statistics, https://finance.yahoo.com/quote/MSFT/key-statistics, retrieved 2026-10-29
+- [C56773e] 345.66 / 7.46 - 524.347 / 17.95 = 17.123589
+- [Ca680fd] 524.347 / 13.64 = 38.441862
 - [D136] Form 10-K FY2025 › Part II › Item 8 › CONSOLIDATED STATEMENTS OF OPERATIONS, p. 29
 - [D172] Form 10-K FY2025 › Part II › Item 8 › Note 3 – Earnings Per Share, p. 36
-- [C252058] 347.725 / 7.46 = 46.61193
+- [W35893d] Buy or Sell Apple Stock - AAPL Stock Price Quote & News | Robinhood, https://robinhood.com/us/en/stocks/AAPL, retrieved 2026-10-29
+- [Ceec3a6] 345.66 / 7.46 = 46.335121
+- [W4b9a45] Apple (AAPL) Stock Price Today—Real Time Charts and Quotes | Gate, https://www.gate.com/tradfi/price/AAPL, retrieved 2026-10-29
+- [W01e33f] Apple (AAPL) Stock Price Today, Pre-Market & After-Hours | CoinGlass, https://www.coinglass.com/stocks/AAPL, retrieved 2026-10-29
+- [W6dacb9] MICROSOFT PE Ratio (TTM): 29.22 — 10% Below Median, https://www.gurufocus.com/term/pettm/MSFT, retrieved 2026-10-29
+- [C638c7c] 524.347 / 17.95 = 29.211532
+- [W244017] Microsoft 2025 Annual Report, https://www.microsoft.com/investor/reports/ar25/index.html, retrieved 2026-10-29
+- [W67590c] Microsoft Earnings Explained: Dates and How to Read Them | BloFin, https://blofin.com/academy/education/msft/microsoft-earnings-explained, retrieved 2026-10-29
 
 ## not_available
 
 **Question:** What was Apple's iPhone revenue in Brazil in fiscal 2025?
 
-**Tools:** search_10k, web_search · **Result:** passed · **Citation warnings:** 2
+**Tools:** search_10k, web_search · **Result:** passed
 
-> **Verification warning:** some claims could not be tied to a source.
-> - Uncited: Apple doesn't disclose iPhone revenue in Brazil for fiscal 2025. The 10-K breaks out net sales for …
-> - Uncited: My web search found no credible third-party estimate of Apple's iPhone revenue in Brazil for fiscal…
+Apple does not disclose iPhone revenue for Brazil in fiscal 2025. The filing reports iPhone net sales only on a worldwide basis, and Brazil is folded into the Americas segment. Total iPhone net sales were $209,586 million [D169], and Americas segment net sales were $178,353 million [D230]. The country-level table lists only the U.S., China and "other countries" [D234].
 
-Apple doesn't disclose iPhone revenue in Brazil for fiscal 2025. The 10-K breaks out net sales for only the U.S. and China, and reports iPhone sales only as a worldwide total. Brazil is not reported on its own in either place.
+- Apple's reportable segments include Americas, which "includes both North and South America" [D229]. Brazil therefore falls inside the Americas segment.
+- Net sales by product category (iPhone, Mac, iPad, Wearables, Home and Accessories, Services) are reported for the company as a whole, not by country [D169].
+- Net sales for individual countries are disclosed only for countries that individually account for 10% or more of total net sales, and the table shows U.S., China and an aggregate "Other countries" line [D234]. Brazil is not shown separately.
+- I found no published estimate of Brazil-specific iPhone revenue for fiscal 2025. A Statista page gives Apple's mobile device market share in Brazil for 2010–2025, but it is a market-share measure, not a revenue figure, and the 2025 value is not shown in the retrieved text [W579aad].
 
-**What the filing does report (fiscal 2025, ended September 27, 2025, in millions of dollars)**
-- **Worldwide iPhone net sales:** $209,586 million [D108].
-- **Americas segment net sales:** $178,353 million [D105]. This segment covers both North and South America, so Brazil is included but not separated [D229].
-- **Country breakout:** Only countries that individually made up 10% or more of net sales are shown. These are the U.S. at $151,790 million and China at $64,377 million. Everything else is grouped as "Other countries" at $199,994 million [D234].
-- **Brazil:** It is not named as a separate figure anywhere in these disclosures [D234].
-- **iPhone commentary:** The management discussion says Americas net sales rose mainly on higher iPhone and Services sales. It gives no dollar figure for iPhone in the Americas, and none for any country [D106].
-
-**Outside estimates**
-- My web search found no credible third-party estimate of Apple's iPhone revenue in Brazil for fiscal 2025.
-- The only iPhone revenue figure it turned up was the worldwide total, which matches Apple's reported figure [W4fce40].
+### Assumptions
+- "iPhone revenue in Brazil" refers to iPhone net sales attributed to Brazil. Apple's segment and country tables do not provide that figure.
+- Fiscal 2025 is the year ended September 27, 2025.
 
 ### Data gaps
-- There is no Brazil-specific net sales figure, for iPhone or for all products, in the 10-K.
-- I found no outside estimate of Brazil iPhone revenue. Any figure I gave would be a guess, so I haven't given one.
+- Brazil-specific iPhone net sales are not disclosed in the 10-K, and I could not find a reliable third-party estimate of them.
+- Apple's iPhone net sales for the Americas segment as a whole are not disclosed either, so no Brazil share of iPhone revenue can be derived.
 
 ### Sources
-- [D108] Form 10-K FY2025 › Part II › Item 7 › Products and Services Performance, p. 23
-- [D105] Form 10-K FY2025 › Part II › Item 7 › Segment Operating Performance, p. 22
-- [D229] Form 10-K FY2025 › Part II › Item 8 › Note 13 – Segment Information and Geographic Data, p. 47
+- [D169] Form 10-K FY2025 › Part II › Item 8 › Note 2 – Revenue, p. 36
+- [D230] Form 10-K FY2025 › Part II › Item 8 › Note 13 – Segment Information and Geographic Data, p. 47
 - [D234] Form 10-K FY2025 › Part II › Item 8 › Note 13 – Segment Information and Geographic Data, p. 48
-- [D106] Form 10-K FY2025 › Part II › Item 7 › Segment Operating Performance, p. 22
-- [W4fce40] Apple Statistics (2026) - Business of Apps, https://www.businessofapps.com/data/apple-statistics, retrieved 2026-10-29
+- [D229] Form 10-K FY2025 › Part II › Item 8 › Note 13 – Segment Information and Geographic Data, p. 47
+- [W579aad] Brazil: Apple mobile device market share 2025 | Statista, https://www.statista.com/statistics/1418706/apple-mobile-device-market-share-brazil, retrieved 2026-10-29

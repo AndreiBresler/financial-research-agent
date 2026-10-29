@@ -70,7 +70,7 @@ def parse_arguments(argv: list[str]) -> CliArguments:
     """Parse the command line: an optional question, quoted or not, and --verbose."""
     parser = argparse.ArgumentParser(prog=PROGRAM_NAME, description=BANNER)
     parser.add_argument("question", nargs="*", help="answer this question and exit; omit it for a session")
-    parser.add_argument("--verbose", action="store_true", help="also print full tool outputs and debug logs")
+    parser.add_argument("--verbose", action="store_true", help="also print full tool outputs and the log lines")
     parsed = parser.parse_args(argv)
     question = WORD_SEPARATOR.join(parsed.question) or None
     return CliArguments(question=question, verbose=parsed.verbose)

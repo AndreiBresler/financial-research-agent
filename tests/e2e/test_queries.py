@@ -2,7 +2,8 @@
 
 Run with: pytest -m e2e (one query: add -k query_1). Skipped when the index isn't built or a key is missing. Every
 query in eval/agent_queries.jsonl runs, the two required ones first. The questions and answers are printed at the end of
-the run; after a full run they are also written to docs/example-outputs.md, the assignment's example outputs.
+the run; after a full run where every query passed, they are also written to docs/example-outputs.md, the assignment's
+example outputs.
 """
 
 from collections.abc import Iterator
@@ -40,12 +41,12 @@ def graph() -> Iterator[AgentGraph]:
 
 @pytest.fixture(scope="module")
 def results(request: pytest.FixtureRequest) -> Iterator[list[QueryResult]]:
-    """Collect every query's result for the end-of-run summary; after a full run, write them to the report."""
+    """Collect every query's result for the end-of-run summary; after a full passing run, write them to the report."""
     collected: list[QueryResult] = []
     request.config.stash[RESULTS_KEY] = collected
     yield collected
-    # A partial run (-k) would replace the full report with a fragment, so only a full run writes it.
-    if len(collected) == len(QUERIES):
+    # Only a full, passing run replaces the report: a partial run (-k) or a failure would overwrite a good one.
+    if len(collected) == len(QUERIES) and all(result.passed for result in collected):
         REPORT_PATH.write_text(format_report(collected), encoding=TEXT_ENCODING)
 
 

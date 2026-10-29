@@ -3,12 +3,13 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from filing_support import PAGE_FOOTER_PATTERN
-from research_agent.config import Settings
+from research_agent.config import MAX_TOOL_ROUNDS_LIMIT, Settings
 
 CREDENTIAL_VARIABLES = ["ANTHROPIC_API_KEY", "TAVILY_API_KEY"]
-OVERRIDABLE_VARIABLES = ["CHUNK_MAX_TOKENS", "LLM_MODEL", "INDEX_DIR"]
+OVERRIDABLE_VARIABLES = ["CHUNK_MAX_TOKENS", "LLM_MODEL", "INDEX_DIR", "MAX_TOOL_ROUNDS"]
 FAKE_ANTHROPIC_KEY = "sk-ant-test-not-a-real-key"
 FAKE_TAVILY_KEY = "tvly-test-not-a-real-key"
 
@@ -109,3 +110,17 @@ def test_environment_overrides_a_default(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("CHUNK_MAX_TOKENS", "300")
     settings = settings_without_env_file()
     assert settings.chunk_max_tokens == 300
+
+
+@pytest.mark.parametrize("rounds", [0, MAX_TOOL_ROUNDS_LIMIT + 1])
+def test_rejects_a_tool_budget_outside_the_recursion_limit(monkeypatch: pytest.MonkeyPatch, rounds: int) -> None:
+    """A tool budget the graph's recursion limit can't fit fails at startup, not in the middle of a question."""
+    monkeypatch.setenv("MAX_TOOL_ROUNDS", str(rounds))
+    with pytest.raises(ValidationError):
+        settings_without_env_file()
+
+
+def test_accepts_the_largest_tool_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The largest budget that fits the recursion limit is allowed."""
+    monkeypatch.setenv("MAX_TOOL_ROUNDS", str(MAX_TOOL_ROUNDS_LIMIT))
+    assert settings_without_env_file().max_tool_rounds == MAX_TOOL_ROUNDS_LIMIT

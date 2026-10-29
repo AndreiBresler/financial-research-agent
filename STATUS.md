@@ -21,7 +21,7 @@ What's built versus designed but not yet implemented, keyed to the build order i
 - **Agent.** plan → agent ⇄ tools → verify on LangGraph, Claude Haiku 5.5 by default via `init_chat_model` (Sonnet 5.5 also passes the e2e tests; `LLM_MODEL` switches). The plan uses native structured output; the system prompt is stable within a question and earlier turns are resent without thinking blocks (Claude binds thinking to the history).
 - **Verification and rendering.** Code checks every marker, paragraph, list item, table row and figure; renders Sources from the Evidence; warns above the answer when a check fails.
 - **CLI.** `python src/main.py` (REPL with `/new`, `/quit`) or one question; streams the plan, tool calls and results; startup checks exit 2 on a missing or stale index or a missing key.
-- **End-to-end.** `pytest -m e2e` runs `eval/agent_queries.jsonl` (the two required queries plus the assignment's decision-logic examples and a not-disclosed case) through `tests/e2e/test_queries.py` and writes the answers after a full run. Latest answers: `docs/example-outputs.md`.
+- **End-to-end.** `pytest -m e2e` runs `eval/agent_queries.jsonl` (the two required queries plus the assignment's decision-logic examples and a not-disclosed case) through `tests/e2e/test_queries.py` and writes the answers after a full run where every query passed. Latest answers: `docs/example-outputs.md`.
 - **Eval.** `python src/evaluate.py`: hit@5 1.0, not-found accuracy 1.0 at `min_dense_score` 0.6.
 
 ## Tests

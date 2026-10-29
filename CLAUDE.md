@@ -6,7 +6,7 @@ This file gives Claude Code the context needed to work on this project without r
 
 A command-line research agent that answers questions about Apple Inc. from its fiscal 2025 Form 10-K (year ended 2025-09-27) and live web data. For each question it streams a plan, runs tools in parallel, computes every derived number in code, and cites every claim: 10-K section and page, web URL and retrieval date, or calculation. It is a take-home assignment: the docs refer to its required queries, bonuses and README questions, and HLD §9 maps each requirement to the design section that covers it.
 
-**The design documents are the spec.** Implement what they say. If the code needs to differ, flag the deviation; once it's approved, update the doc in the same change and bump its version, so docs and code never diverge. HLD §8 (demo → production) is material for the README, not work to do: web UI, multiple companies, authentication and deployment are non-goals (HLD §2).
+**The design documents are the spec.** Implement what they say. If the code needs to differ, flag the deviation; once it's approved, update the doc in the same change, so docs and code never diverge. HLD §8 (demo → production) is material for the README, not work to do: web UI, multiple companies, authentication and deployment are non-goals (HLD §2).
 
 **Grounding is the product.** Every fact and number in an answer comes from a tool result in this conversation, every derived number comes from `calculator`, and the model never writes a URL or page number: code renders the Sources list from the evidence registry, and a code verifier (not an LLM) flags uncited claims. A change that weakens any of this needs explicit sign-off.
 
@@ -96,7 +96,7 @@ General:
 - **Section IDs** (`item:1A`, `item:7`, `note:5`) are produced by the parser, accepted by `search_10k`'s `section` argument and listed to the model through `$sections`.
 - **Per-question state reset.** Each question's input, built by `question_input` in `agent/state.py`, resets `plan`, `tool_rounds` and `final`, while `messages` keeps accumulating in the thread (LLD §8). A new per-question field in `AgentState` must be added to that reset.
 - **Thinking blocks are bound to the history.** Claude binds each thinking block to the system prompt and messages before it; replaying one after that prefix changes is a 400 on newer accounts. Keep the system prompt identical within a question (no per-round values) and the current turn append-only; earlier turns are resent without thinking blocks (LLD §8).
-- **Recursion limit vs. tool budget.** `recursion_limit=25` is a backstop; a run with `max_tool_rounds` rounds takes `2 × rounds + 3` steps (6 rounds → 15 steps). Going above 11 rounds means raising the limit too.
+- **Recursion limit vs. tool budget.** `recursion_limit=25` is a backstop; a run with `max_tool_rounds` rounds takes `2 × rounds + 3` steps (6 rounds → 15 steps). `Settings` rejects more than 11 rounds (`MAX_TOOL_ROUNDS_LIMIT`); raising it means raising the limit too.
 - **Prompt templating.** `prompts.py` fills `$sections`, `$plan`, `$max_tool_rounds`, `$question` and `$tool_results` with `string.Template`. Braces need no escaping, but **dollar signs do**: with `substitute`, `$1,234` raises `ValueError` and `$AAPL` raises `KeyError`. Write literal dollars as `$$` in prompt files, and use `substitute`, not `safe_substitute`, which silently leaves a misspelled placeholder unfilled.
 - **Embedding model ↔ index.** The dense vector size (384) belongs to `bge-small-en-v1.5`; changing `dense_model` changes it and requires a re-ingest. The chunk token limit (`chunk_max_tokens`, 400; model limit 512) counts the section-path prefix plus the text, measured with the embedding model's tokenizer.
 - **Parser, chunker or embedding change → re-ingest and re-evaluate.** Bump `parser_version`, re-run `python src/ingest.py` and `python src/evaluate.py` (hit@5, not-found accuracy), and re-check `min_dense_score`. Every new parser rule gets a case in `tests/fixtures/mini_10k.htm`.
@@ -149,12 +149,12 @@ cp .env.example .env              # then fill in ANTHROPIC_API_KEY and TAVILY_AP
 
 python src/ingest.py              # builds data/index/: once per filing, or after a parser, chunker or embedding change
 python src/main.py                # REPL: /new starts a new thread, /quit exits
-python src/main.py "question"     # one-shot; --verbose adds full tool outputs and debug logs
+python src/main.py "question"     # one-shot; --verbose adds full tool outputs and the log lines
 python src/evaluate.py            # retrieval eval: hit@5 and not-found accuracy
 
 pytest                            # unit and integration tests; e2e and real-model tests excluded by default
 pytest -m embedding_models        # real FastEmbed models and a full real-filing ingest (~80 MB download, ~5 min)
-pytest -m e2e                     # the end-to-end queries; real APIs, costs tokens; a full run writes docs/example-outputs.md
+pytest -m e2e                     # the end-to-end queries; real APIs, costs tokens; a full passing run writes docs/example-outputs.md
 ruff check . && ruff format --check . && mypy
 ```
 

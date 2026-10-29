@@ -1,6 +1,6 @@
 # Financial Research Agent — High-Level Design
 
-**Author:** Andrei Bresler · **Version:** 1.5 · **Date:** 2026-10-29 · **Status:** Draft
+**Author:** Andrei Bresler · **Date:** 2026-10-29 · **Status:** Draft
 
 ## 1. Summary
 
@@ -114,7 +114,7 @@ Tool errors return to the model as typed tool messages, not exceptions, so the a
 
 |Area|Demo|Production|
 |---|---|---|
-|LLM access|Public API|Private endpoint (e.g. Bedrock) behind a model gateway: quotas, fallback, cost|
+|LLM|Haiku 5.5 on the public API (cheapest that passes the tests)|Sonnet 5.5 (more precise reasoning and citations) on a private endpoint (e.g. Bedrock) behind a model gateway: quotas, fallback, cost|
 |Serving|CLI|FastAPI or LangGraph Server on Kubernetes; SSO (OIDC), role-based access|
 |Tools|In-process|MCP servers behind a tool gateway, reusable by other agents|
 |State|In memory|`PostgresSaver`, shared across replicas|

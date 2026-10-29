@@ -84,6 +84,7 @@ General:
 - **structlog, never `print()`.** The one exception is user-facing CLI output in `cli.py`, which goes through a `rich` console.
 - **Minimal inline comments.** Code should be self-explanatory line by line. Comment the *why*, not the *what*, and only where a reader would otherwise be surprised.
 - **General clean-code discipline**: small functions doing one thing at one level of abstraction, early returns over deep nesting, narrow parameter lists, no dead or commented-out code.
+- **Diagrams are Mermaid, never ASCII art**, in the README, the design docs and any other Markdown. Base them on the design docs, and render one locally to check it before committing. Directory trees are not diagrams and stay as text.
 - **Full files, not diffs or snippets**, when proposing a file that doesn't exist yet in the conversation; targeted edits once it does.
 - **Propose before implementing.** The HLD and LLD are the approved architecture, so implementing what they specify doesn't need re-litigating, but anything beyond a trivial fix still gets a short plan and a "go".
 

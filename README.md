@@ -7,37 +7,37 @@ The 10-K is already parsed and indexed (`data/index/`), so there is nothing to i
 ## How it works
 
 ```mermaid
-flowchart TB
-    question(["Question"]) --> plan["<b>Plan</b><br/>steps and tools,<br/>shown to the user"]
-    plan --> model["<b>Agent</b><br/>Claude chooses the tools"]
-    model <-->|"tool calls, in parallel"| tools
-    subgraph tools["Tools"]
-        direction LR
-        search10k["<b>search_10k</b><br/>10-K passages"]
-        websearch["<b>web_search</b><br/>Tavily"]
-        calculator["<b>calculator</b><br/>arithmetic in code"]
-    end
-    model -->|"final answer"| verify["<b>Verify</b> (code)<br/>every claim cited?"]
-    verify --> answer(["Answer + Sources"])
-
-    subgraph ingest["Offline, once per filing"]
+flowchart LR
+    subgraph ING["Ingestion · once per filing"]
         direction TB
-        filing["Apple 10-K HTML"] --> parse["<b>Parse</b><br/>sections, risk factors,<br/>tables, pages"]
-        parse --> chunk["<b>Chunk + embed</b><br/>≤ 400 tokens each"]
-        chunk --> index[("<b>Local index</b><br/>Qdrant, dense + BM25")]
+        H["10-K HTML"] --> P["Structure parser"] --> E["Chunk + embed"]
     end
-    index -.->|hybrid search| search10k
+    E --> QD[("Qdrant<br/>local")]
 
-    classDef offline fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
-    classDef step fill:#ecfdf5,stroke:#10b981,color:#064e3b
-    classDef tool fill:#fff7ed,stroke:#f97316,color:#7c2d12
+    U(["User"]) <--> CLI["CLI"]
+    CLI -->|question| PLAN
+    subgraph AG["Agent · LangGraph"]
+        direction TB
+        PLAN["plan"] --> AGENT["agent<br/>LLM + tools"]
+        AGENT -->|tool calls| TOOLS["tools, in parallel<br/>search_10k<br/>web_search<br/>calculator"]
+        TOOLS --> AGENT
+        AGENT -->|done or budget| VERIFY["verify<br/>citations, in code"]
+    end
+    VERIFY -->|"answer + sources"| CLI
+    AG <--> LLM["Claude API"]
+    TOOLS --> QD
+    TOOLS --> TV["Tavily"]
+
+    classDef ingestion fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
+    classDef node fill:#ecfdf5,stroke:#10b981,color:#064e3b
+    classDef external fill:#fff7ed,stroke:#f97316,color:#7c2d12
     classDef io fill:#f1f5f9,stroke:#475569,color:#0f172a
-    class filing,parse,chunk,index offline
-    class plan,model,verify step
-    class search10k,websearch,calculator tool
-    class question,answer io
-    style tools fill:#fffbeb,stroke:#f59e0b,color:#78350f
-    style ingest fill:#f8fafc,stroke:#94a3b8,color:#334155,stroke-dasharray: 5 5
+    class H,P,E ingestion
+    class PLAN,AGENT,TOOLS,VERIFY node
+    class QD,LLM,TV external
+    class U,CLI io
+    style ING fill:#f8fafc,stroke:#94a3b8,color:#334155,stroke-dasharray: 5 5
+    style AG fill:#f0fdf4,stroke:#22c55e,color:#14532d
 ```
 
 - **How tools are registered.** Each tool is a LangChain `@tool` with a Pydantic argument schema, built by a factory that injects its dependencies (`src/research_agent/tools/`). `composition.build_agent` creates them once; the graph binds them to the model and runs them in LangGraph's `ToolNode`, in parallel when the model asks for several at once.

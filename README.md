@@ -9,7 +9,7 @@ Apple's latest 10-K, for fiscal year 2025 (ended September 27, 2025), is already
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-cp .env.example .env        # fill in ANTHROPIC_API_KEY and TAVILY_API_KEY
+cp .env.example .env        # fill in ANTHROPIC_API_KEY and TAVILY_API_KEY (see API keys below)
 pytest -m e2e               # the 2 required queries + 4 more, against the real Claude and Tavily APIs
 ```
 
@@ -38,6 +38,34 @@ cp .env.example .env                    # then fill in ANTHROPIC_API_KEY and TAV
 ```
 
 The fiscal 2025 10-K is already ingested (`data/index/`); to ingest another filing, see [Ingesting a filing](#ingesting-a-filing).
+
+### API keys
+
+The agent needs two keys: one for Claude (the model) and one for Tavily (web search). Ingestion, the retrieval eval and `pytest` without `-m e2e` need neither.
+
+1. **Anthropic:** sign in at [console.anthropic.com](https://console.anthropic.com), add credits under Settings → Billing, then create a key under API Keys. It starts with `sk-ant-`.
+2. **Tavily:** sign up at [tavily.com](https://tavily.com); the free tier gives 1,000 searches a month. Copy the API key from the dashboard. It starts with `tvly-`.
+3. Put both in `.env`, which is gitignored, so the keys never reach git:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Then edit `.env` so it reads, with your own keys:
+
+   ```bash
+   ANTHROPIC_API_KEY=sk-ant-your-key-here
+   TAVILY_API_KEY=tvly-your-key-here
+   ```
+
+   Or export them for the current shell instead; environment variables take precedence over `.env`:
+
+   ```bash
+   export ANTHROPIC_API_KEY=sk-ant-your-key-here
+   export TAVILY_API_KEY=tvly-your-key-here
+   ```
+
+The agent checks both keys at startup and stops with a message naming any missing one (exit code 2); the e2e tests are skipped with the same reason. Keys are read as secrets and never logged. A full e2e run costs about 2¢ with the default model, and Anthropic's console shows usage and the remaining balance (Usage, and Settings → Billing).
 
 ## Usage
 

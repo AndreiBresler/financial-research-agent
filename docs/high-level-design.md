@@ -1,6 +1,6 @@
 # Financial Research Agent — High-Level Design
 
-**Author:** Andrei Bresler · **Version:** 1.3 · **Date:** 2026-10-29 · **Status:** Draft
+**Author:** Andrei Bresler · **Version:** 1.4 · **Date:** 2026-10-29 · **Status:** Draft
 
 ## 1. Summary
 
@@ -61,9 +61,9 @@ flowchart LR
 |`web_search`|query|Market data, competitors, post-filing events|Title, URL, date, content (untrusted)|
 |`calculator`|expression|Every ratio, percentage or difference|Result and expression, with ID|
 
-Document QA returns cited passages, not a generated answer: one answer, one citation scheme, no nested LLM call. Tools are typed `@tool` functions with Pydantic schemas. `prompts/` holds `system.txt` (tool-selection, citation and untrusted-content rules), `planner.txt` and `examples.txt`.
+Document QA returns cited passages, not a generated answer: one answer, one citation scheme, no nested LLM call. Tools are typed `@tool` functions with Pydantic schemas. `prompts/` holds `system.txt` (tool-selection, citation and untrusted-content rules), `planner.txt`, `examples.txt` and `final.txt` (the answer forced at the tool budget).
 
-**Answer:** the model writes Markdown with inline markers, plus Assumptions and Data gaps when there are any. Code renders the Sources list from the registry, so the model never writes a page number or URL: `[D4] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 12` · `[W3f9a1c] title, URL, published 2026-10-20, retrieved 2026-10-23` · `[Cf2686b] 34550 / 416161 * 100 = 8.302075`.
+**Answer:** the model writes Markdown with inline markers, plus Assumptions and Data gaps when there are any. Code renders the Sources list from the registry, so the model never writes a page number or URL: `[D4] Form 10-K FY2025 › Part I › Item 1A › Macroeconomic and Industry Risks, p. 12` · `[W3f9a1c] title, URL, published 2026-10-20, retrieved 2026-10-23` · `[C3bd255] 34550 / 416161 * 100 = 8.302075`.
 
 ## 5. Information Flow
 

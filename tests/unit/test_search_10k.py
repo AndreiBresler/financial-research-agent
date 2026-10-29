@@ -65,6 +65,13 @@ def evidence_of(message: ToolMessage) -> list[Evidence]:
     return artifact
 
 
+def assert_tool_error(message: ToolMessage, error_code: str) -> None:
+    """Check the call failed as a tool error: status error, the error text for the model, and no Evidence."""
+    assert message.status == "error"
+    assert str(message.content).startswith(error_code)
+    assert message.artifact is None
+
+
 def markers(message: ToolMessage) -> list[str]:
     """Return the citation IDs the model sees, in order."""
     content = str(message.content)
@@ -157,8 +164,7 @@ class TestPosition:
     async def test_position_needs_a_section(self, tool: BaseTool) -> None:
         """Without a section there is no document order to follow, so the model is told to add one."""
         message = await call(tool, query="risk factors", order_by="position")
-        assert str(message.content).startswith(MISSING_SECTION)
-        assert evidence_of(message) == []
+        assert_tool_error(message, MISSING_SECTION)
 
 
 class TestKind:
@@ -195,16 +201,15 @@ class TestKind:
 
 
 class TestErrors:
-    """Problems come back to the model as messages it can act on, never as exceptions."""
+    """Problems come back to the model as error tool messages it can act on, never as exceptions."""
 
     async def test_unknown_section_lists_the_valid_ones(self, tool: BaseTool) -> None:
         """An invalid section ID returns the IDs the model can use."""
         message = await call(tool, query="tax", section="item:99")
         content = str(message.content)
-        assert content.startswith(UNKNOWN_SECTION)
+        assert_tool_error(message, UNKNOWN_SECTION)
         assert "item:1A" in content
         assert "note:7" in content
-        assert evidence_of(message) == []
 
     async def test_not_found_in_a_section_suggests_dropping_the_filter(self, tool: BaseTool) -> None:
         """A miss inside a section tells the model to retry without the section filter."""
@@ -213,9 +218,10 @@ class TestErrors:
         assert evidence_of(message) == []
 
     async def test_not_found_anywhere(self, tool: BaseTool) -> None:
-        """A miss across the whole filing says the filing doesn't cover it."""
+        """A miss across the whole filing says the filing doesn't cover it; that is a finding, not a failure."""
         message = await call(tool, query="weather forecast")
         assert str(message.content).startswith(NO_RELEVANT_CONTENT)
+        assert message.status == "success"
         assert evidence_of(message) == []
 
 

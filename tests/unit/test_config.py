@@ -31,6 +31,8 @@ EXPECTED_DEFAULTS = {
     "max_tool_rounds": 6,
     "tool_output_max_chars": 12_000,
     "question_max_chars": 2_000,
+    "prompts_dir": Path("prompts"),
+    "log_path": Path("logs/agent.jsonl"),
 }
 
 

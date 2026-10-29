@@ -12,9 +12,10 @@ from collections.abc import Callable
 from datetime import date
 from typing import Any, Literal, Protocol
 
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import BaseTool, ToolException, tool
 from pydantic import BaseModel, ConfigDict, Field
 
+from research_agent.log import TOOL_KIND, log_call
 from research_agent.models import Evidence
 from research_agent.tools.output import HEADER_SEPARATOR, NO_RELEVANT_CONTENT, Passage, fit_to_limit, truncate
 
@@ -121,6 +122,7 @@ def make_web_search(
     """Build the web_search tool over the given client; today supplies the retrieval date."""
 
     @tool(TOOL_NAME, args_schema=WebSearchArguments, response_format="content_and_artifact")
+    @log_call(TOOL_KIND, TOOL_NAME)
     async def web_search(query: str) -> tuple[str, list[Evidence]]:
         """Search the web and return cited results, for facts the 10-K can't have.
 
@@ -134,16 +136,18 @@ def make_web_search(
             async with asyncio.timeout(web_timeout_s):
                 response = await client.search(query, search_depth=SEARCH_DEPTH, max_results=web_max_results)
             results = parse_results(response)
-        except TimeoutError:
-            return unavailable_message(f"timed out after {web_timeout_s:g}s"), []
+        except TimeoutError as exception:
+            raise ToolException(unavailable_message(f"timed out after {web_timeout_s:g}s")) from exception
         # Tavily raises its own errors, HTTP errors and more; any of them means the web is unavailable.
         except Exception as exception:
             reason = str(exception) or type(exception).__name__
-            return unavailable_message(reason), []
+            raise ToolException(unavailable_message(reason)) from exception
         if not results:
             return f"{NO_RELEVANT_CONTENT}: {NO_RESULTS_ADVICE}", []
         retrieved = today().isoformat()
         passages = [cited_passage(result, retrieved) for result in results]
         return fit_to_limit(passages, tool_output_max_chars)
 
+    # Raised ToolExceptions reach the model as error ToolMessages carrying the same text.
+    web_search.handle_tool_error = True
     return web_search

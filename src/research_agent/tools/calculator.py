@@ -9,10 +9,11 @@ import math
 from collections.abc import Callable
 from typing import Literal
 
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import BaseTool, ToolException, tool
 from pydantic import BaseModel, Field
 from simpleeval import InvalidExpression, SimpleEval
 
+from research_agent.log import TOOL_KIND, log_call
 from research_agent.models import Evidence
 
 TOOL_NAME = "calculator"
@@ -68,6 +69,7 @@ def make_calculator() -> BaseTool:
     """Build the calculator tool."""
 
     @tool(TOOL_NAME, args_schema=CalculatorArguments, response_format="content_and_artifact")
+    @log_call(TOOL_KIND, TOOL_NAME)
     def calculator(expression: str) -> tuple[str, list[Evidence]]:
         """Evaluate an arithmetic expression and return the result with a citation marker such as [C7b2e04].
 
@@ -79,9 +81,11 @@ def make_calculator() -> BaseTool:
         try:
             result = evaluate(expression)
         except EVALUATION_ERRORS as exception:
-            return f"{INVALID_EXPRESSION}: {exception}", []
+            raise ToolException(f"{INVALID_EXPRESSION}: {exception}") from exception
         calculation = f"{expression} = {result}"
         marker_id = citation_id(expression)
         return f"[{marker_id}] {calculation}", [Evidence(id=marker_id, kind=CALC_EVIDENCE_KIND, source=calculation)]
 
+    # Raised ToolExceptions reach the model as error ToolMessages carrying the same text.
+    calculator.handle_tool_error = True
     return calculator

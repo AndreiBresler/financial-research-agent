@@ -1,6 +1,6 @@
 # Financial Research Agent — Low-Level Design
 
-**Author:** Andrei Bresler · **Version:** 1.3 · **Date:** 2026-10-29 · **Status:** Draft · **Implements:** HLD v1.3
+**Author:** Andrei Bresler · **Version:** 1.4 · **Date:** 2026-10-29 · **Status:** Draft · **Implements:** HLD v1.4
 
 ## 1. Conventions
 
@@ -20,7 +20,7 @@ financial-research-agent/
 ├── requirements-dev.txt        pytest, pytest-asyncio, ruff, mypy
 ├── .env.example                ANTHROPIC_API_KEY, TAVILY_API_KEY
 ├── docs/                       high-level-design.md · low-level-design.md
-├── prompts/                    system.txt · planner.txt · examples.txt
+├── prompts/                    system.txt · planner.txt · examples.txt · final.txt
 ├── data/                       aapl-20250927.htm (source filing) · index/ (built by ingest.py)
 ├── eval/retrieval_set.jsonl    retrieval eval questions
 ├── src/
@@ -94,6 +94,9 @@ class Settings(BaseSettings):                     # research_agent/config.py
     max_tool_rounds: int = 6               # tool rounds per question before a forced answer
     tool_output_max_chars: int = 12_000    # per tool call; protects the context window
     question_max_chars: int = 2_000
+    # Agent files
+    prompts_dir: Path = Path("prompts")      # system.txt, planner.txt, examples.txt
+    log_path: Path = Path("logs/agent.jsonl")
 ```
 
 ## 5. Data Models
@@ -221,11 +224,13 @@ The snippet is illustrative. In code, `Searcher(store, index, SearchConfig)` hol
 
 **Tools** are built by factories that close over their dependencies, for example `make_search_10k(store, searcher, top_k, tool_output_max_chars, filing_label)`, so tests inject fakes. Each is a `@tool` with a Pydantic `args_schema` and `response_format="content_and_artifact"`: it returns text for the model, plus a `list[Evidence]` artifact that the model never sees. Tool descriptions live in the docstrings, next to the contract they describe. `search_10k` and `web_search` are `async def`; `calculator` stays sync because it does no I/O, and `ToolNode` runs sync tools off the event loop.
 
-| Tool | Arguments | Behavior | Errors returned to the model |
+| Tool | Arguments | Behavior | Errors and not-found messages returned to the model |
 |---|---|---|---|
 | `search_10k` | `query` (≤ 300 chars), `section` (e.g. `item:7`, `note:5`), `order_by` (`relevance` or `position`), `k` (1–10), `kind` (`text`, `risk_factor` or `table`) | `k` defaults to `top_k`. `kind` filters by chunk type, together with `section`, in both modes and in cross-reference expansion; `table` finds reported figures. `relevance`: hybrid search plus cross-references. `position`: the first `k` units of `section` in document order, with all parts of a split unit; in `item:1A` only risk factors unless `kind` says otherwise, so "top N risk factors" skips the intro. `section` is required for `position`; `item:8` includes its notes. | `NO_RELEVANT_CONTENT in item:7: retry without the section filter` (with a kind: `… for kind table: retry without the section or kind filter`; without filters: `NO_RELEVANT_CONTENT: …`); `ERROR unknown_section: …` with the list of valid IDs; `ERROR missing_section: …` for `position` without a section. |
 | `web_search` | `query` (≤ 300 chars) | `AsyncTavilyClient`, basic depth, `web_max_results` results, wrapped in `asyncio.timeout(web_timeout_s)`; results in Tavily's order, each one's content capped at 1,500 chars. Wrapper tags inside the content, in any case or spacing, are neutralised, so a page cannot close its untrusted block. | `ERROR web_unavailable: <reason>. Answer from the 10-K and list this under Data gaps.` on a timeout or client error; `NO_RELEVANT_CONTENT: the web search returned no results; rephrase the query once, or list it under Data gaps` when Tavily returns nothing. |
 | `calculator` | `expression` (≤ 200 chars) | `simpleeval` with no names and only `round` and `abs` as functions; the result must be a finite number (not a bool) and is rounded to 6 decimals. | `ERROR invalid_expression: <reason>` |
+
+**Errors are raised, not returned.** Each `ERROR …` above is raised as a `ToolException` carrying that text, and every tool sets `handle_tool_error=True`, so the model receives the same text in a `ToolMessage` with `status="error"` and no artifact. The log records the call as failed (§11), and the CLI reads the status rather than parsing text. `NO_RELEVANT_CONTENT` is a finding, not a failure: it returns normally, with `status="success"` and an empty Evidence list.
 
 The model sees results in this format, capped at `tool_output_max_chars` per call:
 
@@ -246,13 +251,13 @@ In 10-K paths, Item headings are shortened to `Item 7`; notes and subsections st
 ```python
 # research_agent/agent/graph.py
 def build_graph(llm: BaseChatModel, tools: list[BaseTool], store: ChunkStore,
-                settings: Settings,
+                prompts: Prompts, settings: Settings,
                 checkpointer: BaseCheckpointSaver | None = None) -> CompiledStateGraph:
     """Assemble the agent graph: plan → agent ⇄ tools → verify (HLD §4)."""
     g = StateGraph(AgentState)
     # PlanNode and AgentNode are async callables (async __call__, llm.ainvoke).
-    g.add_node("plan", PlanNode(llm, store))
-    g.add_node("agent", AgentNode(llm, tools, store, settings))
+    g.add_node("plan", PlanNode(llm, store, prompts))
+    g.add_node("agent", AgentNode(llm, tools, store, prompts, settings))
     # Runs one step's tool calls concurrently and turns tool errors into ToolMessages.
     g.add_node("tools", ToolNode(tools, handle_tool_errors=True))
     g.add_node("verify", verify_node)
@@ -271,11 +276,11 @@ def route_after_agent(state: AgentState) -> str:
     return "tools" if isinstance(last, AIMessage) and last.tool_calls else "verify"
 ```
 
-- **Per-question input:** `{"messages": [HumanMessage(q)], "plan": None, "tool_rounds": 0, "final": None}`. This resets the per-question fields, while `messages` keeps accumulating in the thread. The config sets `thread_id` (one per REPL session) and `recursion_limit=25` as a hard backstop; six tool rounds use 15 steps.
+- **Per-question input:** `question_input(q)` in `agent/state.py` returns `{"messages": [HumanMessage(q)], "plan": None, "tool_rounds": 0, "final": None}`, the one place that lists the per-question fields. This resets the per-question fields, while `messages` keeps accumulating in the thread. The config sets `thread_id` (one per REPL session) and `recursion_limit=25` as a hard backstop; six tool rounds use 15 steps.
 - **plan:** `llm.with_structured_output(Plan)` with `planner.txt` and the list of section IDs; returns `{"plan": plan}`.
-- **agent:** the system prompt is `system.txt` plus `examples.txt`, filled with the section list, the plan and the remaining tool rounds. While `tool_rounds < max_tool_rounds`, it calls `llm.bind_tools(tools)` and adds 1 to `tool_rounds` when the reply contains tool calls. At the limit, it calls the model without tools on a flattened input: the question plus the gathered tool outputs as plain text, so the request carries no tool-call blocks. It instructs the model to answer now and list what's missing.
+- **agent:** the system prompt is `system.txt` plus `examples.txt`, filled with the section list, the plan and the remaining tool rounds. While `tool_rounds < max_tool_rounds`, it calls `llm.bind_tools(tools)` and adds 1 to `tool_rounds` when the reply contains tool calls. At the limit, it calls the model without tools on a flattened input: the system prompt (0 rounds left) and `final.txt` filled with the question and the gathered tool outputs as plain text, so the request carries no tool-call blocks. `final.txt` instructs the model to answer now and list what's missing under `### Data gaps`.
 - **Model input:** the whole current turn, plus only the human and final AI messages of earlier turns. Old tool output stays in state for citations but is not resent.
-- **Prompts:** `prompts.py` loads each file once and fills placeholders with `string.Template` (`$sections`, `$plan`, `$rounds_left`), so braces in examples need no escaping.
+- **Prompts:** `Prompts(prompts_dir)` in `prompts.py` loads the four files once, at startup, and is injected into the nodes. It fills placeholders with `string.Template` `substitute`: `planner.txt` gets `$sections`; `system.txt` and `examples.txt` get `$sections`, `$plan` and `$rounds_left`; `final.txt` gets `$question` and `$tool_results`. Braces need no escaping; literal dollars are written `$$`. Loading fails, naming the file, on a missing file, an invalid `$`, or a placeholder the file doesn't get.
 
 `system.txt` holds these rules:
 1. Facts and numbers come only from tool results in this conversation; every derived number comes from `calculator`.
@@ -287,7 +292,7 @@ def route_after_agent(state: AgentState) -> str:
 
 ## 9. Verification and Rendering
 
-`verify_node` normalizes the final message's content blocks to text, builds the registry from every `ToolMessage` artifact in the thread, and checks the answer body, meaning everything before `### Assumptions` or `### Data gaps`. Since IDs are stable, a follow-up answer may cite evidence from an earlier turn.
+`verify_node` normalizes the final message's content blocks to text, builds the registry from every `ToolMessage` artifact in the thread (error messages carry none), and checks the answer body, meaning everything before `### Assumptions` or `### Data gaps`. Since IDs are stable, a follow-up answer may cite evidence from an earlier turn.
 
 | Check | Rule |
 |---|---|
@@ -312,17 +317,18 @@ The CLI iterates `graph.astream(input, config, stream_mode="updates")` and print
 |---|---|---|
 | LLM 429, 5xx or timeout | `ChatAnthropic` (3 retries with backoff) | A clear error; the thread is kept, so the question can be retried. |
 | Tavily failure or timeout | `web_search` | `web_unavailable`; the answer lists a data gap. |
+| Tool reports an error (`ERROR …`) | the tool raises `ToolException`; `handle_tool_error=True` | An error `ToolMessage` (`status="error"`) with the error text; logged as a failure. |
 | Invalid arguments, unexpected tool exception | Pydantic, `ToolNode(handle_tool_errors=True)` | An error `ToolMessage`; the model corrects the call. |
 | Tool budget reached | agent node | A final answer without tools, gaps listed. |
 
-**Logging:** structlog writes JSON lines to `logs/agent.jsonl`. A decorator that handles both sync and async functions wraps every node and tool and logs `run_id`, `thread_id`, the node or tool name, `latency_ms`, token usage (from `AIMessage.usage_metadata`) and the outcome. A processor masks the values of keys whose names contain `key`, `token` or `authorization`. LangSmith tracing turns on through its environment variables, with no code change.
+**Logging:** `configure_logging(log_path, verbose)` makes structlog write JSON lines to `log_path` (`logs/agent.jsonl`); `--verbose` adds debug logs on stderr, keeping stdout for the answer. A decorator, `log_call(kind, name)`, handles both sync and async functions and wraps every node and tool (under `@tool`, so it sees a tool's `ToolException`). It logs `run_id` and `thread_id` (bound per question through structlog's contextvars), the node or tool name, `latency_ms`, token usage summed over the returned `AIMessage`s' `usage_metadata`, `evidence_count` for tool results, and the outcome: `ok`, or `error` with the error type and message, after which the exception propagates. A processor masks the values of keys in which `key`, `token` or `authorization` appears as a whole word (`api_key`, `x-api-key`, `access_token`, `Authorization`), including in nested dicts; token counts such as `input_tokens` are not masked. LangSmith tracing turns on through its environment variables, with no code change.
 
 **Security:** questions are capped at `question_max_chars`; web content is wrapped as untrusted and the system prompt forbids following it; tools are read-only, with no file or shell access; the only HTML parsed is the local filing.
 
 ## 12. Testing and Evaluation
 
 - **Unit (`tests/unit`):** every parser stage on `mini_10k.htm` (table of contents skipped, pages, sections, risk factors, table cleanup including year header rows, cross-references), including the traps found in the real filing: an empty italic span, a single italic word, short bold italic risk titles and an empty Item. Checks on the real filing, skipped when it is absent, assert that each standard Item is found once on the page its table of contents gives; that Parts I–IV and Notes 1–13 are each found once, the notes inside Item 8; that every block has a page, in order, and a section; that Item 1A splits into 27 risk factors under 5 categories; and that the rows behind the required queries render correctly (gross margin 46.9%, R&D $34,550 against net sales of $416,161). Then: chunk token limits and table splitting; hybrid search, the threshold and one-hop expansion on an in-memory Qdrant collection, which exercises the built-in fusion; calculator safety (`__import__`, attribute access and names rejected); web search with a mocked client, including a timeout; each verification rule; rendering.
-- **Graph (`tests/graph`):** `ScriptedChatModel`, a `GenericFakeChatModel` subclass whose `bind_tools` returns itself, replays prepared `AIMessage`s, including tool calls and the structured plan. Paths covered: a normal answer, a tool error followed by recovery, budget exhaustion, and a verification failure. One test checks that two tool calls in one step run concurrently: each fake tool sleeps 0.2 s, and the step must take under 0.3 s.
+- **Graph (`tests/graph`):** `ScriptedChatModel`, a `GenericFakeChatModel` subclass whose `bind_tools` returns itself, replays prepared `AIMessage`s, including tool calls and the structured plan. Paths covered: a normal answer, a tool error followed by recovery, budget exhaustion, and the per-question reset on a thread; a verification failure is added in step 6, with the real verify and render. One test checks that two tool calls in one step run concurrently: each fake tool sleeps 0.2 s, and the step must take under 0.3 s.
 - **Integration (`tests/test_queries.py`, marker `integration`, skipped without API keys):** both required queries. Asserts that the expected tools were called, that the key figures appear within a tolerance (R&D ≈ 8.3% of net sales; gross margin ≈ 46.9%), and that verification passed.
 - **Retrieval eval (`python src/evaluate.py`, logic in `retrieval/evaluation.py`):** 17 questions in `eval/retrieval_set.jsonl`, each listing every section that answers it (finding any one is a hit, since many facts appear in both Item 7 and the notes), plus 3 off-topic questions that must return not-found. Reports hit@5 over the ranked results only (cross-referenced extras don't count), not-found accuracy, and each question's best dense score, which is used to calibrate `min_dense_score` and `rrf_k`. Calibration on bge-small: off-topic questions scored up to 0.548 and on-topic ones from 0.682, so `min_dense_score` is 0.6; at `rrf_k` 60, hit@5 is 1.0 and not-found accuracy 1.0. Re-run after any parsing, chunking or embedding change.
 - **Embedding models (marker `embedding_models`, opt-in):** the real FastEmbed models and tokenizer (about 80 MB, downloaded on first run), and the whole pipeline on the real filing: every chunk within 400 model tokens, manifest and index agreeing, and the 46.9% gross margin table in the dense top 5. Other ingestion tests use fake embedders and an in-memory Qdrant.
@@ -330,4 +336,4 @@ The CLI iterates `graph.astream(input, config, stream_mode="updates")` and print
 
 ## 13. Build Order
 
-Parser and table cleanup, test-first against the fixture and then the real filing → chunker, index, manifest and `ingest.py` → `ChunkStore`, hybrid search and `search_10k`, with the retrieval eval and threshold calibration → `web_search` and `calculator` → the graph, prompts, logging (`log.py`, including the node and tool-call decorator from §11) and scripted-model tests → verification, rendering and the CLI → integration tests and the README.
+Parser and table cleanup, test-first against the fixture and then the real filing → chunker, index, manifest and `ingest.py` → `ChunkStore`, hybrid search and `search_10k`, with the retrieval eval and threshold calibration → `web_search` and `calculator` → the graph, prompts, logging (`log.py`, including the node and tool-call decorator from §11) and scripted-model tests, with a placeholder verify node that copies the answer into `final` → verification, rendering, the verification-failure graph test, and the CLI → integration tests and the README.

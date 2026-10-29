@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import re
 from datetime import date
-from typing import Any
 
 import pytest
 from langchain_core.messages import ToolMessage
@@ -20,6 +19,7 @@ from research_agent.tools.web_search import (
     WebSearchArguments,
     make_web_search,
 )
+from web_fakes import ScriptedTavilyClient
 
 URL_ENCODING = "utf-8"
 WEB_ID_PREFIX = "W"
@@ -57,31 +57,6 @@ APPLE_RESULT = {
     "content": "AAPL closed at $250.",
     "score": 0.82,
 }
-
-
-class ScriptedTavilyClient:
-    """Stands in for AsyncTavilyClient: records each search and replays a response, a delay or an exception."""
-
-    def __init__(
-        self,
-        results: list[dict[str, Any]] | None = None,
-        delay_s: float = 0.0,
-        error: Exception | None = None,
-    ) -> None:
-        """Script the response; an error is raised instead of returning results."""
-        self.results = results or []
-        self.delay_s = delay_s
-        self.error = error
-        self.calls: list[dict[str, Any]] = []
-
-    async def search(self, query: str, **options: Any) -> dict[str, Any]:
-        """Record the call, then wait, fail or return the scripted results in Tavily's response shape."""
-        self.calls.append({"query": query, **options})
-        if self.delay_s:
-            await asyncio.sleep(self.delay_s)
-        if self.error is not None:
-            raise self.error
-        return {"query": query, "results": self.results}
 
 
 def build_tool(
@@ -133,11 +108,12 @@ def expected_id(url: str) -> str:
 
 
 def assert_web_unavailable(message: ToolMessage) -> None:
-    """Check the model got the web_unavailable error, with the advice to fall back, and no Evidence."""
+    """Check the call failed as a tool error, telling the model to fall back on the 10-K, with no Evidence."""
     content = str(message.content)
+    assert message.status == "error"
     assert content.startswith(f"{WEB_UNAVAILABLE}: ")
     assert content.endswith(DATA_GAPS_ADVICE)
-    assert evidence_of(message) == []
+    assert message.artifact is None
 
 
 class TestDefinition:
@@ -246,7 +222,7 @@ class TestUntrustedContent:
 
 
 class TestErrors:
-    """Failures come back to the model as web_unavailable, so it answers from the 10-K and lists the gap."""
+    """Failures come back as web_unavailable error messages, so the model answers from the 10-K and lists the gap."""
 
     async def test_timeout(self) -> None:
         """A search slower than web_timeout_s is cut off rather than stalling the question."""
@@ -266,9 +242,10 @@ class TestErrors:
         assert "HTTP 503 from Tavily" in str(message.content)
 
     async def test_no_results(self) -> None:
-        """An empty result list means the search worked but found nothing, so the model may rephrase once."""
+        """An empty result list means the search worked but found nothing: a finding, not a failure."""
         message = await call(build_tool(ScriptedTavilyClient([])), "Microsoft gross margin")
         assert str(message.content) == NO_RESULTS_MESSAGE
+        assert message.status == "success"
         assert evidence_of(message) == []
 
 

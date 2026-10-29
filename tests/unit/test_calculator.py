@@ -76,6 +76,7 @@ class TestResults:
         """R&D as a share of net sales: the model sees the marker, the expression and the result."""
         message = call(tool, R_AND_D_SHARE)
         assert str(message.content) == f"[{expected_id(R_AND_D_SHARE)}] {R_AND_D_SHARE} = 8.302075"
+        assert message.status == "success"
 
     def test_evidence_matches_the_marker(self, tool: BaseTool) -> None:
         """One Evidence, kind calc, whose source line is the expression and its result."""
@@ -126,7 +127,7 @@ class TestResults:
 
 
 class TestErrors:
-    """Anything beyond arithmetic comes back as invalid_expression, never as an exception or a result."""
+    """Anything beyond arithmetic comes back as an invalid_expression error message, never as a result."""
 
     @pytest.mark.parametrize(
         "expression",
@@ -151,5 +152,6 @@ class TestErrors:
         """Imports, attributes, names, other functions, non-numeric or non-finite results, division by zero, huge
         powers and syntax errors are all rejected with an error the model can act on, and no Evidence."""
         message = call(tool, expression)
+        assert message.status == "error"
         assert str(message.content).startswith(f"{INVALID_EXPRESSION}: ")
-        assert evidence_of(message) == []
+        assert message.artifact is None

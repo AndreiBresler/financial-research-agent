@@ -8,9 +8,10 @@ import asyncio
 import re
 from typing import Literal
 
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import BaseTool, ToolException, tool
 from pydantic import BaseModel, Field
 
+from research_agent.log import TOOL_KIND, log_call
 from research_agent.models import Chunk, ChunkKind, Evidence
 from research_agent.retrieval.search import NotFound, Searcher
 from research_agent.retrieval.store import ChunkStore
@@ -125,6 +126,7 @@ def make_search_10k(
     """Build the search_10k tool over the given store and searcher."""
 
     @tool(TOOL_NAME, args_schema=SearchTenKArguments, response_format="content_and_artifact")
+    @log_call(TOOL_KIND, TOOL_NAME)
     async def search_10k(
         query: str,
         section: str | None = None,
@@ -143,10 +145,10 @@ def make_search_10k(
         """
         count = k or top_k
         if order_by == POSITION_ORDER and section is None:
-            return f"{MISSING_SECTION}: order_by=position needs a section, such as item:1A", []
+            raise ToolException(f"{MISSING_SECTION}: order_by=position needs a section, such as item:1A")
         if section is not None and not store.has_section(section):
             valid_sections = SECTION_LIST_SEPARATOR.join(store.section_ids())
-            return f"{UNKNOWN_SECTION}: {section}. Valid sections: {valid_sections}", []
+            raise ToolException(f"{UNKNOWN_SECTION}: {section}. Valid sections: {valid_sections}")
         if order_by == POSITION_ORDER and section is not None:
             # "Top N risk factors" means risk factors, so Item 1A skips its intro unless a kind is given.
             unit_kind = kind
@@ -163,4 +165,6 @@ def make_search_10k(
             return not_found_message(section, kind), []
         return render(chunks, filing_label, tool_output_max_chars)
 
+    # Raised ToolExceptions reach the model as error ToolMessages carrying the same text.
+    search_10k.handle_tool_error = True
     return search_10k

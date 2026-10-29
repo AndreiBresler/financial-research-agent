@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     max_tool_rounds: int = 6
     tool_output_max_chars: int = 12_000
     question_max_chars: int = 2_000
+    # Agent files
+    prompts_dir: Path = Path("prompts")  # system.txt, planner.txt, examples.txt, final.txt
+    log_path: Path = Path("logs/agent.jsonl")
 
     def missing_credentials(self) -> list[str]:
         """Return the environment variable names of the API keys that are unset or empty."""

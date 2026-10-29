@@ -3,9 +3,11 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 ChunkKind = Literal["text", "risk_factor", "table"]
+ToolName = Literal["search_10k", "web_search", "calculator"]
+MAX_PLAN_STEPS = 6
 
 
 class Chunk(BaseModel):
@@ -40,3 +42,16 @@ class Evidence(BaseModel):
     id: str  # "D137", "W3f9a1c", "C7b2e04"
     kind: Literal["doc", "web", "calc"]
     source: str  # the line rendered under Sources, without the [ID] marker
+
+
+class PlanStep(BaseModel):
+    """One step of the plan: what it establishes and which tool it uses."""
+
+    goal: str = Field(description="What this step establishes.")
+    tool: ToolName | None = Field(description="The tool this step uses, or null for reasoning over earlier results.")
+
+
+class Plan(BaseModel):
+    """Plan from the plan node, shown to the user before any tool runs."""
+
+    steps: list[PlanStep] = Field(min_length=1, max_length=MAX_PLAN_STEPS)

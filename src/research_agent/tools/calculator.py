@@ -4,7 +4,6 @@ simpleeval gets no names, no attribute access and only round and abs, so an expr
 reach Python objects. The result is cited like any other source, with a C marker.
 """
 
-import hashlib
 import math
 from collections.abc import Callable
 from typing import Literal
@@ -15,6 +14,7 @@ from simpleeval import InvalidExpression, SimpleEval
 
 from research_agent.log import TOOL_KIND, log_call
 from research_agent.models import Evidence
+from research_agent.tools.output import hashed_citation_id
 
 TOOL_NAME = "calculator"
 INVALID_EXPRESSION = "ERROR invalid_expression"
@@ -24,8 +24,6 @@ RESULT_DECIMALS = 6
 ALLOWED_FUNCTIONS: dict[str, Callable[..., object]] = {"round": round, "abs": abs}
 CALC_EVIDENCE_KIND: Literal["calc"] = "calc"
 CALC_ID_PREFIX = "C"
-CALC_ID_HEX_CHARS = 6
-EXPRESSION_ENCODING = "utf-8"
 NON_NUMERIC_RESULT = "the result is not a number; use arithmetic only"
 NON_FINITE_RESULT = "the result is not a finite number"
 EVALUATION_ERRORS = (InvalidExpression, SyntaxError, ArithmeticError, TypeError, ValueError)
@@ -48,9 +46,7 @@ class InvalidResultError(ValueError):
 def citation_id(expression: str) -> str:
     """Return the stable C ID: whitespace can't change an expression's meaning, so it is removed before hashing."""
     compact_expression = "".join(expression.split())
-    encoded_expression = compact_expression.encode(EXPRESSION_ENCODING)
-    digest = hashlib.sha1(encoded_expression).hexdigest()
-    return f"{CALC_ID_PREFIX}{digest[:CALC_ID_HEX_CHARS]}"
+    return hashed_citation_id(CALC_ID_PREFIX, compact_expression)
 
 
 def evaluate(expression: str) -> int | float:

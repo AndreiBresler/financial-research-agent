@@ -19,6 +19,8 @@ import structlog
 from langchain_core.messages import AIMessage
 from structlog.typing import EventDict, WrappedLogger
 
+from research_agent.config import TEXT_ENCODING
+
 P = ParamSpec("P")
 R = TypeVar("R")
 CallKind = Literal["node", "tool"]
@@ -28,7 +30,6 @@ TOOL_KIND: CallKind = "tool"
 REDACTED = "[REDACTED]"
 # A credential word standing alone: api_key, x-api-key, access_token, Authorization; not input_tokens or monkey.
 SECRET_KEY_PATTERN = re.compile(r"(?<![a-z])(key|token|authorization)(?![a-z])", re.IGNORECASE)
-LOG_FILE_ENCODING = "utf-8"
 LINE_END = "\n"
 MILLISECONDS_PER_SECOND = 1_000
 LATENCY_DECIMALS = 1
@@ -58,7 +59,7 @@ class JsonLinesLogger:
     def msg(self, message: str) -> None:
         """Write one line to the log file and the console."""
         line = message + LINE_END
-        with self.log_path.open("a", encoding=LOG_FILE_ENCODING) as log_file:
+        with self.log_path.open("a", encoding=TEXT_ENCODING) as log_file:
             log_file.write(line)
         if self.console is not None:
             self.console.write(line)
@@ -108,12 +109,9 @@ def configure_logging(log_path: Path, verbose: bool) -> None:
 
 def usage_fields(result: object) -> dict[str, int]:
     """Sum the token usage of the model replies in a node's result; empty when there are none."""
-    if isinstance(result, AIMessage):
-        replies = [result]
-    elif isinstance(result, Mapping):
-        replies = [message for message in result.get(MESSAGES_KEY, []) if isinstance(message, AIMessage)]
-    else:
+    if not isinstance(result, Mapping):
         return {}
+    replies = [message for message in result.get(MESSAGES_KEY, []) if isinstance(message, AIMessage)]
     usages = [reply.usage_metadata for reply in replies if reply.usage_metadata]
     if not usages:
         return {}

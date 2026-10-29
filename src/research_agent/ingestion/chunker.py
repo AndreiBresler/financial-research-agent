@@ -7,11 +7,10 @@ from dataclasses import dataclass, field
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from research_agent.ingestion.parser import HEADING_KIND, TABLE_KIND, Block
-from research_agent.models import Chunk, ChunkKind
+from research_agent.models import SECTION_PATH_SEPARATOR, Chunk, ChunkKind
 
 TokenCounter = Callable[[str], int]
 
-PATH_SEPARATOR = " › "
 PATH_LINE_TERMINATOR = "\n"
 PARAGRAPH_SEPARATOR = "\n\n"
 MARKDOWN_LINE_SEPARATOR = "\n"
@@ -52,7 +51,7 @@ class ChunkDraft:
 
 def path_line(section_path: list[str]) -> str:
     """Render a section path as one line."""
-    return PATH_SEPARATOR.join(section_path)
+    return SECTION_PATH_SEPARATOR.join(section_path)
 
 
 def embedding_text(chunk: Chunk) -> str:

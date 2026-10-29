@@ -1,0 +1,8 @@
+{
+  "doc_sha256": "95506f43d12b84dbd1ac97f11fc7c350f0d5195a0c1811369b4bdcea993fbe8b",
+  "parser_version": "2",
+  "dense_model": "BAAI/bge-small-en-v1.5",
+  "sparse_model": "Qdrant/bm25",
+  "chunk_count": 277,
+  "built_at": "2026-10-29T18:15:16.065907Z"
+}

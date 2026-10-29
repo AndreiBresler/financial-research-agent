@@ -8,17 +8,28 @@ deterministic, which the letter-frequency fake from step 2 can't do.
 import math
 import re
 
+from langchain_core.tools import BaseTool
 from qdrant_client import QdrantClient
 
 from ingestion_fakes import FakeSparseEmbedder
+from research_agent.config import Settings
 from research_agent.ingestion.indexer import Indexer
 from research_agent.models import Chunk
+from research_agent.retrieval.index import Index
+from research_agent.retrieval.search import Searcher
+from research_agent.retrieval.store import ChunkStore
+from research_agent.tools.search_10k import make_search_10k
 
 TOPICS = ("margin", "tax", "revenue", "iphone", "debt", "lease")
 UNMATCHED_DOCUMENT_DIMENSION = len(TOPICS)
 UNMATCHED_QUERY_DIMENSION = len(TOPICS) + 1
 WORD_PATTERN = re.compile(r"[a-z]+")
 FAKE_TOPIC_MODEL = "fake/topics"
+# Topic-keyword cosines are 0 or near 1, so any floor in between separates relevant from irrelevant.
+TEST_MIN_DENSE_SCORE = 0.5
+TEST_TOP_K = 2
+TEST_FILING_LABEL = "Form 10-K FY2025"
+TEST_OUTPUT_LIMIT = 12_000
 
 PART_I = "Part I"
 PART_II = "Part II"
@@ -194,3 +205,23 @@ def index_corpus(chunks: list[Chunk]) -> tuple[QdrantClient, TopicDenseEmbedder,
     indexer = Indexer(client, dense_embedder, sparse_embedder)
     indexer.build(chunks)
     return client, dense_embedder, sparse_embedder
+
+
+def build_searcher(xref_max_extra: int = 3) -> Searcher:
+    """Index the corpus and return a searcher over it."""
+    corpus = build_corpus()
+    client, dense_embedder, sparse_embedder = index_corpus(corpus)
+    settings = Settings(_env_file=None, min_dense_score=TEST_MIN_DENSE_SCORE, xref_max_extra=xref_max_extra)
+    return Searcher(ChunkStore(corpus), Index(client, dense_embedder, sparse_embedder), settings)
+
+
+def build_search_10k(tool_output_max_chars: int = TEST_OUTPUT_LIMIT) -> BaseTool:
+    """Build search_10k over the indexed corpus."""
+    searcher = build_searcher()
+    return make_search_10k(
+        store=searcher.store,
+        searcher=searcher,
+        top_k=TEST_TOP_K,
+        tool_output_max_chars=tool_output_max_chars,
+        filing_label=TEST_FILING_LABEL,
+    )

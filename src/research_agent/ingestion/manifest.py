@@ -6,11 +6,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
+from research_agent.config import TEXT_ENCODING
 from research_agent.models import Manifest
 
 MANIFEST_FILE_NAME = "manifest.json"
 TEMPORARY_SUFFIX = ".tmp"
-FILE_ENCODING = "utf-8"
 JSON_INDENT = 2
 MISSING_INDEX_REASON = "the index has not been built"
 
@@ -41,7 +41,7 @@ def write_manifest(manifest: Manifest, index_dir: Path) -> None:
     final_path = manifest_path(index_dir)
     temporary_path = final_path.with_suffix(TEMPORARY_SUFFIX)
     manifest_json = manifest.model_dump_json(indent=JSON_INDENT)
-    temporary_path.write_text(manifest_json, encoding=FILE_ENCODING)
+    temporary_path.write_text(manifest_json, encoding=TEXT_ENCODING)
     os.replace(temporary_path, final_path)
 
 
@@ -50,7 +50,7 @@ def read_manifest(index_dir: Path) -> Manifest | None:
     path = manifest_path(index_dir)
     if not path.exists():
         return None
-    manifest_json = path.read_text(encoding=FILE_ENCODING)
+    manifest_json = path.read_text(encoding=TEXT_ENCODING)
     try:
         return Manifest.model_validate_json(manifest_json)
     except ValidationError:

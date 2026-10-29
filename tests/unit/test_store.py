@@ -18,9 +18,9 @@ def store() -> ChunkStore:
     return ChunkStore(build_corpus())
 
 
-def unit_sequences(units: list[list[Chunk]]) -> list[list[int]]:
-    """Render units as lists of their chunks' sequence numbers."""
-    return [[chunk.seq for chunk in unit] for unit in units]
+def sequences(chunks: list[Chunk]) -> list[int]:
+    """Render chunks as their sequence numbers."""
+    return [chunk.seq for chunk in chunks]
 
 
 def test_loads_chunks_written_by_ingestion(tmp_path: Path) -> None:
@@ -62,23 +62,19 @@ def test_other_scopes_are_just_the_section(store: ChunkStore) -> None:
 
 def test_first_units_in_position_order(store: ChunkStore) -> None:
     """The first k units of a section, by position, include every kind."""
-    units = store.first_units("item:1A", 2)
-    assert unit_sequences(units) == [[2], [3]]
+    assert sequences(store.first_units("item:1A", 2)) == [2, 3]
 
 
-def test_first_units_of_one_kind_keep_all_parts(store: ChunkStore) -> None:
-    """Filtering to risk factors skips the intro, and a split risk factor comes back with both parts."""
-    units = store.first_units("item:1A", 2, kind="risk_factor")
-    assert unit_sequences(units) == [[3], [4, 5]]
+def test_first_units_of_one_kind_return_each_opening_part(store: ChunkStore) -> None:
+    """Filtering to risk factors skips the intro; a split risk factor contributes only its opening part."""
+    assert sequences(store.first_units("item:1A", 2, kind="risk_factor")) == [3, 4]
 
 
 def test_first_units_of_item_8_walk_statements_and_notes(store: ChunkStore) -> None:
     """Position order over Item 8 follows the document through the statements and into the notes."""
-    units = store.first_units("item:8", 3)
-    assert unit_sequences(units) == [[8], [9], [10]]
+    assert sequences(store.first_units("item:8", 3)) == [8, 9, 10]
 
 
 def test_first_units_never_returns_more_than_exist(store: ChunkStore) -> None:
     """Asking for more units than a section has returns all of them."""
-    units = store.first_units("item:7", 10)
-    assert unit_sequences(units) == [[6], [7]]
+    assert sequences(store.first_units("item:7", 10)) == [6, 7]

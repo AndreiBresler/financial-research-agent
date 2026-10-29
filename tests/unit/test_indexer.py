@@ -5,10 +5,10 @@ from qdrant_client import QdrantClient, models
 
 from ingestion_fakes import FakeDenseEmbedder, FakeSparseEmbedder
 from research_agent.ingestion.chunker import embedding_text
+from research_agent.ingestion.embeddings import EMBED_BATCH_SIZE
 from research_agent.ingestion.indexer import (
     COLLECTION_NAME,
     DENSE_VECTOR_NAME,
-    EMBED_BATCH_SIZE,
     SPARSE_VECTOR_NAME,
     Indexer,
 )

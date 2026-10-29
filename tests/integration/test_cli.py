@@ -6,13 +6,10 @@ needed.
 
 import io
 import json
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import pytest
-import structlog
 from langchain_core.messages import ToolCall, ToolMessage
 from rich.console import Console
 
@@ -302,13 +299,6 @@ class TestAsk:
 
 class TestLogContext:
     """Every log line of a question carries its run_id and the thread_id."""
-
-    @pytest.fixture(autouse=True)
-    def reset_structlog(self) -> Iterator[None]:
-        """Undo global logging configuration and bound context after each test."""
-        yield
-        structlog.reset_defaults()
-        structlog.contextvars.clear_contextvars()
 
     async def test_each_question_gets_its_own_run_id(self, tmp_path: Path) -> None:
         """Two questions on one thread share the thread_id and have different run_ids."""

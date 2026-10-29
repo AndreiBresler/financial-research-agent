@@ -17,7 +17,7 @@ from research_agent.ingestion.pipeline import CHUNKS_FILE_NAME, read_chunks, run
 from research_agent.models import Chunk, Manifest
 
 CHUNK_MAX_TOKENS = 400
-FIXTURE_CHUNK_COUNT = 23
+FIXTURE_CHUNK_COUNT = 24
 BUILT_AT = datetime(2026, 10, 27, 12, 0, tzinfo=UTC)
 
 

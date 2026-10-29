@@ -4,40 +4,36 @@ Wiring only: loads Settings, the index and the models, runs eval/retrieval_set.j
 hit@5, not-found accuracy, and the score gap used to calibrate min_dense_score. No API keys are needed.
 """
 
-import sys
+from contextlib import closing
 from pathlib import Path
 
 import structlog
-from qdrant_client import QdrantClient
 
 from research_agent.config import Settings
 from research_agent.ingestion.embeddings import FastEmbedDense, FastEmbedSparse
-from research_agent.ingestion.pipeline import QDRANT_DIRECTORY_NAME
+from research_agent.ingestion.indexer import open_qdrant
 from research_agent.retrieval.evaluation import DEFAULT_EVAL_K, evaluate, load_eval_set
 from research_agent.retrieval.index import Index
-from research_agent.retrieval.search import SearchConfig, Searcher
+from research_agent.retrieval.search import Searcher
 from research_agent.retrieval.store import ChunkStore
 
 EVAL_SET_PATH = Path("eval/retrieval_set.jsonl")
 SCORE_DECIMALS = 3
-SUCCESS_EXIT_CODE = 0
 
 logger = structlog.get_logger(__name__)
 
 
-def main() -> int:
+def main() -> None:
     """Evaluate retrieval on the committed eval set and log the results."""
     settings = Settings()
-    qdrant_path = settings.index_dir / QDRANT_DIRECTORY_NAME
-    client = QdrantClient(path=str(qdrant_path))
-    try:
-        index = Index(client, FastEmbedDense(settings.dense_model), FastEmbedSparse(settings.sparse_model))
+    with closing(open_qdrant(settings.index_dir)) as client:
+        dense_embedder = FastEmbedDense(settings.dense_model)
+        sparse_embedder = FastEmbedSparse(settings.sparse_model)
+        index = Index(client, dense_embedder, sparse_embedder)
         store = ChunkStore.load(settings.index_dir)
-        searcher = Searcher(store, index, SearchConfig.from_settings(settings))
+        searcher = Searcher(store, index, settings)
         cases = load_eval_set(EVAL_SET_PATH)
         report = evaluate(searcher, cases, k=DEFAULT_EVAL_K)
-    finally:
-        client.close()
     for result in report.results:
         logger.info(
             "case",
@@ -57,8 +53,7 @@ def main() -> int:
         lowest_on_topic_score=round(min(on_topic_scores, default=0.0), SCORE_DECIMALS),
         highest_off_topic_score=round(max(off_topic_scores, default=0.0), SCORE_DECIMALS),
     )
-    return SUCCESS_EXIT_CODE
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

@@ -3,7 +3,7 @@
 Searches are synchronous CPU work; search_10k runs them in a worker thread.
 """
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from research_agent.config import Settings
 from research_agent.models import Chunk, ChunkKind
@@ -21,35 +21,14 @@ class NotFound(BaseModel):
     kind: ChunkKind | None = None
 
 
-class SearchConfig(BaseModel):
-    """The thresholds search needs, taken from Settings."""
-
-    model_config = ConfigDict(frozen=True)
-
-    min_dense_score: float
-    prefetch_limit: int
-    rrf_k: int
-    xref_max_extra: int
-
-    @classmethod
-    def from_settings(cls, settings: Settings) -> "SearchConfig":
-        """Copy the search thresholds from Settings."""
-        return cls(
-            min_dense_score=settings.min_dense_score,
-            prefetch_limit=settings.prefetch_limit,
-            rrf_k=settings.rrf_k,
-            xref_max_extra=settings.xref_max_extra,
-        )
-
-
 class Searcher:
     """Searches the filing: gate on relevance, fuse dense and sparse rankings, then follow cross-references."""
 
-    def __init__(self, store: ChunkStore, index: Index, config: SearchConfig) -> None:
-        """Keep the store, the index and the thresholds."""
+    def __init__(self, store: ChunkStore, index: Index, settings: Settings) -> None:
+        """Keep the store, the index and the settings that hold the search thresholds."""
         self.store = store
         self.index = index
-        self.config = config
+        self.settings = settings
 
     def scope(self, section: str | None) -> list[str] | None:
         """Return the sections a filter covers, or None for the whole filing."""
@@ -76,9 +55,10 @@ class Searcher:
         section_ids = self.scope(section)
         # RRF scores are rank-based and can't tell a weak match from a strong one, so the gate uses the raw cosine.
         best = self.best_score(vectors, section_ids, kind)
-        if best < self.config.min_dense_score:
+        if best < self.settings.min_dense_score:
             return NotFound(section=section, kind=kind)
-        ranked_seqs = self.index.hybrid(vectors, section_ids, kind, self.config.prefetch_limit, self.config.rrf_k, k)
+        prefetch_limit = self.settings.prefetch_limit
+        ranked_seqs = self.index.hybrid(vectors, section_ids, kind, prefetch_limit, self.settings.rrf_k, k)
         ranked = [self.store.get(seq) for seq in ranked_seqs]
         return self.expand_cross_refs(ranked, vectors, kind)
 
@@ -93,7 +73,7 @@ class Searcher:
         added_count = 0
         for chunk in ranked:
             for reference in chunk.cross_refs:
-                if added_count >= self.config.xref_max_extra:
+                if added_count >= self.settings.xref_max_extra:
                     return results
                 if reference in visited_sections or not self.store.has_section(reference):
                     continue
@@ -103,7 +83,7 @@ class Searcher:
                 if not matches:
                     continue
                 best_match = matches[0]
-                if best_match.score < self.config.min_dense_score or best_match.seq in present_seqs:
+                if best_match.score < self.settings.min_dense_score or best_match.seq in present_seqs:
                     continue
                 added_chunk = self.store.get(best_match.seq)
                 results.append(added_chunk)

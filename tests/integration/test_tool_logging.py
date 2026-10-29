@@ -1,24 +1,19 @@
 """Each real tool logs its calls (LLD section 11): outcome, error type and evidence_count, never ok for a failure."""
 
 import json
-from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import pytest
-import structlog
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
 
 from research_agent.log import configure_logging
-from research_agent.retrieval.index import Index
-from research_agent.retrieval.search import SearchConfig, Searcher
-from research_agent.retrieval.store import ChunkStore
 from research_agent.tools.calculator import make_calculator
-from research_agent.tools.search_10k import make_search_10k
 from research_agent.tools.web_search import make_web_search
-from retrieval_fakes import build_corpus, index_corpus
+from retrieval_fakes import build_search_10k
+from tool_support import tool_call
 from web_fakes import ScriptedTavilyClient
 
 FILE_ENCODING = "utf-8"
@@ -30,31 +25,12 @@ WEB_RESULT = {
 }
 
 
-@pytest.fixture(autouse=True)
-def reset_structlog() -> Iterator[None]:
-    """Undo global logging configuration after each test."""
-    yield
-    structlog.reset_defaults()
-
-
 @pytest.fixture
 def log_path(tmp_path: Path) -> Path:
     """Configure logging to a temporary file and return its path."""
     path = tmp_path / "logs" / "agent.jsonl"
     configure_logging(path, verbose=False)
     return path
-
-
-def build_search_10k() -> BaseTool:
-    """Build search_10k over the small indexed test corpus."""
-    corpus = build_corpus()
-    client, dense_embedder, sparse_embedder = index_corpus(corpus)
-    store = ChunkStore(corpus)
-    config = SearchConfig(min_dense_score=0.5, prefetch_limit=20, rrf_k=60, xref_max_extra=3)
-    searcher = Searcher(store, Index(client, dense_embedder, sparse_embedder), config)
-    return make_search_10k(
-        store=store, searcher=searcher, top_k=2, tool_output_max_chars=OUTPUT_LIMIT, filing_label="Form 10-K FY2025"
-    )
 
 
 def build_web_search(client: ScriptedTavilyClient) -> BaseTool:
@@ -70,8 +46,7 @@ def build_web_search(client: ScriptedTavilyClient) -> BaseTool:
 
 async def call_and_read_log(tool: BaseTool, arguments: dict[str, Any], log_path: Path) -> dict[str, Any]:
     """Call the tool as ToolNode does and return the last log entry."""
-    tool_call = {"type": "tool_call", "id": "call-1", "name": tool.name, "args": arguments}
-    message = await tool.ainvoke(tool_call)
+    message = await tool.ainvoke(tool_call(tool, arguments))
     assert isinstance(message, ToolMessage)
     lines = log_path.read_text(encoding=FILE_ENCODING).splitlines()
     entry: dict[str, Any] = json.loads(lines[-1])

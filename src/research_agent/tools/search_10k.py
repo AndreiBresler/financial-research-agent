@@ -12,7 +12,7 @@ from langchain_core.tools import BaseTool, ToolException, tool
 from pydantic import BaseModel, Field
 
 from research_agent.log import TOOL_KIND, log_call
-from research_agent.models import Chunk, ChunkKind, Evidence
+from research_agent.models import SECTION_PATH_SEPARATOR, Chunk, ChunkKind, Evidence
 from research_agent.retrieval.search import NotFound, Searcher
 from research_agent.retrieval.store import ChunkStore
 from research_agent.tools.output import HEADER_SEPARATOR, NO_RELEVANT_CONTENT, Passage, fit_to_limit
@@ -33,7 +33,6 @@ FILTER_NAME_SEPARATOR = " or "
 DOC_EVIDENCE_KIND: Literal["doc"] = "doc"
 DOC_ID_PREFIX = "D"
 
-PATH_SEPARATOR = " › "
 ITEM_HEADING_PATTERN = re.compile(r"^(Item \d+[A-C]?)\.")
 SECTION_LIST_SEPARATOR = ", "
 
@@ -48,8 +47,8 @@ class SearchTenKArguments(BaseModel):
     )
     order_by: OrderBy = Field(
         default=RELEVANCE_ORDER,
-        description="relevance: best matches. position: the first k units of the section in document order "
-        "(in item:1A, the first k risk factors); needs a section.",
+        description="relevance: best matches. position: the opening passage of each of the first k units of the "
+        "section in document order (in item:1A, the first k risk factors); needs a section.",
     )
     k: int | None = Field(default=None, ge=MIN_K, le=MAX_K, description="How many passages or units to return.")
     kind: ChunkKind | None = Field(
@@ -64,7 +63,7 @@ def display_path(section_path: list[str]) -> str:
     for element in section_path:
         item_match = ITEM_HEADING_PATTERN.match(element)
         shortened.append(item_match.group(1) if item_match else element)
-    return PATH_SEPARATOR.join(shortened)
+    return SECTION_PATH_SEPARATOR.join(shortened)
 
 
 def page_label(page_start: int, page_end: int) -> str:
@@ -90,7 +89,8 @@ def evidence(chunk: Chunk, filing_label: str) -> Evidence:
     """Build the Evidence the renderer prints for a chunk."""
     path = display_path(chunk.section_path)
     pages = page_label(chunk.page_start, chunk.page_end)
-    return Evidence(id=citation_id(chunk), kind=DOC_EVIDENCE_KIND, source=f"{filing_label} › {path}, {pages}")
+    source = f"{filing_label}{SECTION_PATH_SEPARATOR}{path}, {pages}"
+    return Evidence(id=citation_id(chunk), kind=DOC_EVIDENCE_KIND, source=source)
 
 
 def render(chunks: list[Chunk], filing_label: str, max_chars: int) -> tuple[str, list[Evidence]]:
@@ -138,10 +138,11 @@ def make_search_10k(
 
         Use it for risk factors, strategy, management's explanations and reported figures. Each passage starts
         with a citation marker such as [D137]; cite facts with exactly those markers. relevance returns the best
-        matches for the query, plus passages from sections they cross-reference. position returns the first k
-        units of a section in document order; in item:1A these are the risk factors in the order the filing
-        lists them. kind narrows results to tables, risk factors or narrative text; use table for reported
-        figures. Tables come as Markdown, with figures in the filing's units (mostly millions of dollars).
+        matches for the query, plus passages from sections they cross-reference. position returns the opening
+        passage of each of the first k units of a section in document order; in item:1A these are the risk
+        factors in the order the filing lists them. A long unit continues in later passages: search the section
+        by relevance to read more. kind narrows results to tables, risk factors or narrative text; use table for
+        reported figures. Tables come as Markdown, with figures in the filing's units (mostly millions of dollars).
         """
         count = k or top_k
         if order_by == POSITION_ORDER and section is None:
@@ -154,8 +155,7 @@ def make_search_10k(
             unit_kind = kind
             if unit_kind is None and section == RISK_FACTORS_SECTION:
                 unit_kind = RISK_FACTOR_KIND
-            units = store.first_units(section, count, unit_kind)
-            chunks = [chunk for unit in units for chunk in unit]
+            chunks = store.first_units(section, count, unit_kind)
         else:
             result = await asyncio.to_thread(searcher.search, query, section, count, kind)
             if isinstance(result, NotFound):

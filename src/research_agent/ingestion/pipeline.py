@@ -7,14 +7,13 @@ from typing import Protocol
 
 import structlog
 
+from research_agent.config import TEXT_ENCODING
 from research_agent.ingestion.chunker import TokenCounter, build_chunks
 from research_agent.ingestion.manifest import document_sha256, remove_manifest, write_manifest
 from research_agent.ingestion.parser import PARSER_VERSION, parse_filing
 from research_agent.models import Chunk, Manifest
 
 CHUNKS_FILE_NAME = "chunks.jsonl"
-QDRANT_DIRECTORY_NAME = "qdrant"
-FILE_ENCODING = "utf-8"
 LINE_SEPARATOR = "\n"
 
 logger = structlog.get_logger(__name__)
@@ -48,13 +47,13 @@ def write_chunks(chunks: list[Chunk], index_dir: Path) -> None:
     lines = [chunk.model_dump_json() for chunk in chunks]
     content = LINE_SEPARATOR.join(lines) + LINE_SEPARATOR
     chunks_path = index_dir / CHUNKS_FILE_NAME
-    chunks_path.write_text(content, encoding=FILE_ENCODING)
+    chunks_path.write_text(content, encoding=TEXT_ENCODING)
 
 
 def read_chunks(index_dir: Path) -> list[Chunk]:
     """Read the chunks written by the last ingestion."""
     chunks_path = index_dir / CHUNKS_FILE_NAME
-    content = chunks_path.read_text(encoding=FILE_ENCODING)
+    content = chunks_path.read_text(encoding=TEXT_ENCODING)
     return [Chunk.model_validate_json(line) for line in content.splitlines() if line]
 
 
@@ -71,7 +70,7 @@ def run_ingestion(
     index_dir.mkdir(parents=True, exist_ok=True)
     remove_manifest(index_dir)
     source_bytes = source_path.read_bytes()
-    html = source_bytes.decode(FILE_ENCODING)
+    html = source_bytes.decode(TEXT_ENCODING)
     blocks = parse_filing(html, page_footer_pattern)
     chunks = build_chunks(blocks, count_tokens, chunk_max_tokens)
     logger.info("chunked filing", source=str(source_path), blocks=len(blocks), chunks=len(chunks))

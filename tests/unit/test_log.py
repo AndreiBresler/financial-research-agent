@@ -3,7 +3,7 @@
 import asyncio
 import inspect
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -37,14 +37,6 @@ class EchoArguments(BaseModel):
     """Arguments of the test tools."""
 
     text: str
-
-
-@pytest.fixture(autouse=True)
-def reset_structlog() -> Iterator[None]:
-    """Undo global logging configuration and bound context after each test."""
-    yield
-    structlog.reset_defaults()
-    structlog.contextvars.clear_contextvars()
 
 
 @pytest.fixture

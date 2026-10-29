@@ -8,10 +8,8 @@ import pytest
 from filing_support import PAGE_FOOTER_PATTERN, PROJECT_ROOT, REAL_FILING_PATH, read_filing
 from research_agent.ingestion.parser import parse_filing
 from research_agent.retrieval.evaluation import EvalCase, evaluate, load_eval_set
-from research_agent.retrieval.index import Index
-from research_agent.retrieval.search import SearchConfig, Searcher
-from research_agent.retrieval.store import ChunkStore
-from retrieval_fakes import build_corpus, index_corpus
+from research_agent.retrieval.search import Searcher
+from retrieval_fakes import build_searcher
 
 EVAL_SET_PATH = PROJECT_ROOT / "eval" / "retrieval_set.jsonl"
 MIN_ON_TOPIC_CASES = 15
@@ -29,10 +27,7 @@ FAKE_CASES = [
 @pytest.fixture
 def searcher() -> Searcher:
     """Return a searcher over the indexed fake corpus."""
-    corpus = build_corpus()
-    client, dense_embedder, sparse_embedder = index_corpus(corpus)
-    config = SearchConfig(min_dense_score=0.5, prefetch_limit=20, rrf_k=60, xref_max_extra=3)
-    return Searcher(ChunkStore(corpus), Index(client, dense_embedder, sparse_embedder), config)
+    return build_searcher()
 
 
 def test_loads_cases_from_jsonl(tmp_path: Path) -> None:

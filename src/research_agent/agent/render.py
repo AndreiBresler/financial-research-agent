@@ -1,9 +1,7 @@
 """Answer rendering (LLD section 9): code, not the model, writes the Sources list and any verification warning."""
 
-import re
-
 from research_agent.models import Evidence, Verification
-from research_agent.tools.output import truncate
+from research_agent.tools.output import cited_ids, truncate
 
 SOURCES_HEADING = "### Sources"
 SOURCE_PREFIX = "- "
@@ -14,7 +12,6 @@ MAX_LISTED_ISSUES = 5
 MAX_ISSUE_CHARS = 100
 SECTION_SEPARATOR = "\n\n"
 LINE_SEPARATOR = "\n"
-CITATION_PATTERN = re.compile(r"\[([DWC][0-9a-f]{1,8})\]")
 URL_ISSUE = "Contains a URL; sources are listed under Sources instead"
 
 
@@ -40,7 +37,7 @@ def warning_block(verification: Verification) -> str:
 
 def sources_block(answer: str, registry: dict[str, Evidence]) -> str | None:
     """Return the Sources list for the markers the answer cites, in order of first use; None when there are none."""
-    markers = dict.fromkeys(CITATION_PATTERN.findall(answer))
+    markers = cited_ids(answer)
     lines = [f"{SOURCE_PREFIX}[{marker}] {registry[marker].source}" for marker in markers if marker in registry]
     if not lines:
         return None

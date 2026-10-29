@@ -21,7 +21,7 @@ Reference docs:
 Python 3.12, local CLI only. Per-package decisions: LLD §3.
 
 - **LangGraph**, a custom `StateGraph` (plan → agent ⇄ tools → verify), not a prebuilt agent, so plan and verify are explicit, testable nodes.
-- **Claude** via `init_chat_model` (`langchain-anthropic`), no `temperature` (Claude Sonnet 5.5 rejects non-default sampling values). The model (default `anthropic:claude-sonnet-5-5`) is a `Settings` value. The plan uses `with_structured_output(Plan, method="json_schema")`: Sonnet 5.5 rejects forced tool calls.
+- **Claude** via `init_chat_model` (`langchain-anthropic`), no `temperature` (current Claude models reject non-default sampling values). The model (default `anthropic:claude-haiku-5-5`, about 20× cheaper than Sonnet 5.5 and passing the e2e tests) is a `Settings` value. The plan uses `with_structured_output(Plan, method="json_schema")`: Sonnet 5.5 rejects forced tool calls.
 - **BeautifulSoup + lxml**, a targeted parser: 10-K structure lives in inline styles, which generic loaders lose.
 - **Qdrant local mode + FastEmbed** (`BAAI/bge-small-en-v1.5` dense, `Qdrant/bm25` sparse): hybrid search fused with Qdrant's built-in RRF (`RrfQuery`, with an explicit `rrf_k`), no server, GPU or embedding API. `qdrant-client` is used directly, not `langchain-qdrant`, because search needs the raw dense score for the not-found threshold.
 - **Tavily** via `AsyncTavilyClient` in a thin wrapper of our own, not `langchain-tavily`, to control output format, IDs and errors.
@@ -71,8 +71,8 @@ Project-specific:
 - **Tunables live in `Settings`, not in code**, so tuning never touches code. `min_dense_score` is calibrated with the retrieval eval, not guessed.
 - **Model and embedding names are configuration.** No model string appears outside the `Settings` defaults.
 - **Prompt text lives in `prompts/`**, not in Python. The exception is tool descriptions, which live in the tool docstrings next to the contract they describe (LLD §7).
-- **Tests run without API keys**, except those under the opt-in `integration` marker.
-- **`data/index/` is generated.** Never hand-edit it; re-run `python src/ingest.py`. `manifest.json` is written last, so a crashed build leaves no manifest and the CLI refuses to start.
+- **Tests run without API keys**, except the end-to-end tests in `tests/e2e`, under the opt-in `e2e` marker.
+- **`data/index/` is generated.** Never hand-edit it; re-run `python src/ingest.py`. It is committed (except Qdrant's `.lock`), so reviewers can run without ingesting: commit it again after re-ingesting. `manifest.json` is written last, so a crashed build leaves no manifest and the CLI refuses to start.
 - **Nothing from HLD §8's production column gets built.**
 
 General:
@@ -89,7 +89,7 @@ General:
 
 ## Cross-file invariants — change both sides together
 
-- **Citation markers.** Tools emit `[D<seq>]`, `[W<6 hex>]` and `[C<6 hex>]` (LLD §7); `verify` matches `\[([DWC][0-9a-f]{1,8})\]` (LLD §9); `system.txt` tells the model to copy markers exactly. IDs are stable, never counters: `D` plus the chunk's `seq`, `W`/`C` plus the first 6 hex characters of a SHA-1 of the URL or of the expression with all whitespace removed. That's why parallel tool calls need no shared counter.
+- **Citation markers.** Tools emit `[D<seq>]`, `[W<6 hex>]` and `[C<6 hex>]` (LLD §7); `verify` and `render` match `\[([DWC][0-9a-f]{1,8})\]` (LLD §9), defined once in `tools/output.py`; `system.txt` tells the model to copy markers exactly. IDs are stable, never counters: `D` plus the chunk's `seq`, `W`/`C` plus the first 6 hex characters of a SHA-1 of the URL or of the expression with all whitespace removed. That's why parallel tool calls need no shared counter.
 - **The evidence registry is derived** from the `Evidence` artifacts on the `ToolMessage`s in `messages`. Don't add a state field for it. The model never sees artifacts.
 - **Answer headings.** `### Assumptions` and `### Data gaps` (`system.txt` rule 6) mark where the verified body ends, and `render` appends `### Sources`. Renaming one means changing the prompt, `verify` and `render` together.
 - **Tool error strings** (`NO_RELEVANT_CONTENT …` from `search_10k`, and from `web_search` when it gets no results; `ERROR web_unavailable: …`, `ERROR invalid_expression: …`) are read by the model and printed by the CLI. They are instructions to the model as much as error codes. `ERROR …` strings are raised as `ToolException` and reach the model as `ToolMessage`s with `status="error"`; `NO_RELEVANT_CONTENT` is a normal result with no Evidence.
@@ -106,7 +106,7 @@ General:
 - **Reuse scripts, don't rewrite them.** Before writing a verification or debug script, check `.dev-scratch/` and the test suite for something that already does the job. Extend or rerun it instead of re-authoring it.
 - **Persist utility scripts in `.dev-scratch/`.** One-off scripts used to verify a change (not part of the app or its tests), such as dumping parsed blocks or probing a search, go in `.dev-scratch/` at the project root, gitignored. Give them descriptive names (`dump_item_1a_risk_factors.py`, not `tmp.py`) so they're found and reused next session.
 - **Batch related checks into one command**, not one tool call per file: `ruff check . && ruff format --check . && mypy`.
-- **Test strategically, not reflexively.** Plan the checkpoints before a multi-step change; LLD §13's build steps are natural ones. After a small edit, `ruff` + `mypy` and the relevant unit test file are enough; run the full `pytest` at checkpoints. Run integration tests (they cost API tokens) and the retrieval eval only when their inputs change: prompts, tools, the graph, parsing, chunking or embedding.
+- **Test strategically, not reflexively.** Plan the checkpoints before a multi-step change; LLD §13's build steps are natural ones. After a small edit, `ruff` + `mypy` and the relevant unit test file are enough; run the full `pytest` at checkpoints. Run the end-to-end tests (they cost API tokens) and the retrieval eval only when their inputs change: prompts, tools, the graph, parsing, chunking or embedding.
 - **Always propose before implementing — wait for "go".** Show the plan (approach, files touched, and for any real behaviour change, the tradeoffs) and wait for an explicit "go" before writing code. This applies even when a message mixes a review ask with an implementation ask ("review X and add Y"): review first, changes after confirmation.
 - **Prefer targeted edits over full-file rewrites** when only part of a file changes, to keep diffs (and token cost) proportional to the change.
 
@@ -117,19 +117,21 @@ Planned layout, from LLD §2, which lists every module; `STATUS.md` says which p
 ```
 README.md                 setup, usage, design summary; answers the assignment's README questions
 CLAUDE.md                 this file
-pyproject.toml            ruff, mypy and pytest config (pythonpath = ["src"], mypy_path = "src")
+pyproject.toml            ruff, mypy and pytest config (pythonpath = ["src", "tests"], mypy_path = "src")
 requirements.txt          pinned runtime dependencies; requirements-dev.txt adds pytest, pytest-asyncio, ruff, mypy
 .env.example              ANTHROPIC_API_KEY, TAVILY_API_KEY, without values
 docs/                     high-level-design.md, low-level-design.md
 prompts/                  system.txt, planner.txt, examples.txt, final.txt
 data/aapl-20250927.htm    the source filing (public)
-data/index/               generated by ingest: qdrant/, chunks.jsonl, manifest.json
+data/index/               generated by ingest and committed: qdrant/, chunks.jsonl, manifest.json
 eval/retrieval_set.jsonl  retrieval eval questions with their expected section_id
+eval/agent_queries.jsonl  end-to-end queries: the two required ones, decision-logic examples, a not-disclosed figure
 src/main.py               agent CLI entry point
 src/ingest.py             ingestion entry point
 src/evaluate.py           retrieval eval entry point
-src/research_agent/       the package: config, models, log, prompts, cli; ingestion/, retrieval/, tools/, agent/
-tests/                    fixtures/mini_10k.htm, unit/, graph/ (scripted fake model), test_queries.py (integration)
+src/research_agent/       the package: config, models, log, prompts, composition, cli; ingestion/, retrieval/, tools/, agent/
+tests/                    unit/ (one module, fakes), integration/ (components together: graph with a scripted model, CLI,
+                          pipeline, real filing and models), e2e/ (real APIs); fixtures/, conftest.py, *_fakes.py, *_support.py
 logs/                     generated: agent.jsonl
 .dev-scratch/             gitignored one-off verification scripts
 ```
@@ -150,9 +152,9 @@ python src/main.py                # REPL: /new starts a new thread, /quit exits
 python src/main.py "question"     # one-shot; --verbose adds full tool outputs and debug logs
 python src/evaluate.py            # retrieval eval: hit@5 and not-found accuracy
 
-pytest                            # unit and graph tests; integration tests excluded by default
+pytest                            # unit and integration tests; e2e and real-model tests excluded by default
 pytest -m embedding_models        # real FastEmbed models and a full real-filing ingest (~80 MB download, ~5 min)
-pytest -m integration             # both required queries; needs real API keys and costs tokens
+pytest -m e2e                     # the end-to-end queries; real APIs, costs tokens; a full run writes docs/example-outputs.md
 ruff check . && ruff format --check . && mypy
 ```
 
@@ -162,6 +164,6 @@ Exit codes: 0 success, 1 runtime error, 2 index missing or stale (the CLI prints
 
 Implementation follows the build order in LLD §13, each step a checkpoint. See `STATUS.md` for what's built and `TODO.md` for open items. Status stays out of this file: it changes often, and this file shouldn't.
 
-Done means: both required queries pass the integration tests (R&D ≈ 8.3% of net sales, gross margin ≈ 46.9%, citations verified); `ruff check`, `ruff format --check`, `mypy` and `pytest` are clean; and the README answers the assignment's README questions (tool registration, tool choice, information flow, prompt location; HLD §9).
+Done means: both required queries pass the end-to-end tests (R&D ≈ 8.3% of net sales, gross margin ≈ 46.9%, citations verified); `ruff check`, `ruff format --check`, `mypy` and `pytest` are clean; and the README answers the assignment's README questions (tool registration, tool choice, information flow, prompt location; HLD §9).
 
 Keep `STATUS.md` and `TODO.md` current: after a task that changes what's built or what's left, propose the specific edits and apply them once approved. That's the same propose-then-"go" workflow as code changes, so they never drift silently.

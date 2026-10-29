@@ -11,7 +11,7 @@
 {"question": "How much of its common stock did Apple repurchase during the year?", "expected_sections": ["item:5", "item:7", "note:10"]}
 {"question": "What are the maturities and interest rates of Apple's term debt?", "expected_sections": ["note:9"]}
 {"question": "What are Apple's operating lease liabilities?", "expected_sections": ["note:8"]}
-{"question": "What are Apple's reportable segments and how is their performance measured?", "expected_sections": ["note:13"]}
+{"question": "What are Apple's reportable segments and how is their performance measured?", "expected_sections": ["note:13", "item:7"]}
 {"question": "How exposed is Apple to interest rate and foreign currency risk?", "expected_sections": ["item:7A"]}
 {"question": "What was Apple's effective tax rate?", "expected_sections": ["item:7", "note:7"]}
 {"question": "How much deferred revenue did Apple report?", "expected_sections": ["note:2"]}

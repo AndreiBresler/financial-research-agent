@@ -15,13 +15,13 @@ from typing import Any, Final
 import structlog
 from langchain_core.messages import AIMessage, ToolCall, ToolMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 from rich.console import Console
 from rich.markdown import Markdown
 
+from research_agent.agent.graph import AgentGraph
 from research_agent.agent.nodes import AGENT_NODE, PLAN_NODE, TOOLS_NODE, VERIFY_NODE, format_plan
-from research_agent.agent.state import AgentState, question_input
+from research_agent.agent.state import question_input
 from research_agent.config import Settings
 from research_agent.ingestion.manifest import IndexIdentity, document_sha256, read_manifest, stale_reasons
 from research_agent.ingestion.parser import PARSER_VERSION
@@ -33,6 +33,7 @@ INDEX_NOT_READY_EXIT_CODE = 2
 INTERRUPTED_EXIT_CODE = 130
 
 PROGRAM_NAME = "python src/main.py"
+LOADING_MESSAGE = "Loading the index and models…"
 INGEST_COMMAND = "python src/ingest.py"
 PROMPT = "> "
 NEW_THREAD_COMMAND = "/new"
@@ -99,6 +100,14 @@ def startup_problems(settings: Settings) -> list[str]:
     return problems
 
 
+def ready_to_start(settings: Settings, console: Console) -> bool:
+    """Print everything that stops the agent from starting; return True when nothing does."""
+    problems = startup_problems(settings)
+    for problem in problems:
+        console.print(problem, markup=False, highlight=False)
+    return not problems
+
+
 def format_tool_call(tool_call: ToolCall) -> str:
     """Show a tool call as the model made it: → search_10k(section="item:1A", k=3)."""
     arguments = LIST_SEPARATOR.join(
@@ -128,8 +137,8 @@ def format_tool_result(message: ToolMessage) -> str:
     return f"{RESULT_ARROW} {message.name}: {result_summary(message)}"
 
 
-def new_thread_id() -> str:
-    """Return a fresh conversation ID."""
+def new_id() -> str:
+    """Return a fresh random ID for a conversation thread or a question's run."""
     return uuid.uuid4().hex
 
 
@@ -138,7 +147,7 @@ class AgentCli:
 
     def __init__(
         self,
-        graph: CompiledStateGraph[AgentState, None, AgentState, AgentState],
+        graph: AgentGraph,
         console: Console,
         settings: Settings,
         verbose: bool,
@@ -202,7 +211,7 @@ class AgentCli:
         if len(question) > max_chars:
             self.print_line(f"The question is {len(question)} characters; the limit is {max_chars}.", ERROR_STYLE)
             return False
-        structlog.contextvars.bind_contextvars(run_id=new_thread_id(), thread_id=thread_id)
+        structlog.contextvars.bind_contextvars(run_id=new_id(), thread_id=thread_id)
         config: RunnableConfig = {"configurable": {"thread_id": thread_id}, "recursion_limit": RECURSION_LIMIT}
         try:
             async for update in self.graph.astream(question_input(question), config, stream_mode=STREAM_MODE):
@@ -216,13 +225,13 @@ class AgentCli:
 
     async def run_once(self, question: str) -> int:
         """Answer one question on a new thread and return the exit code."""
-        answered = await self.ask(question, new_thread_id())
+        answered = await self.ask(question, new_id())
         return SUCCESS_EXIT_CODE if answered else RUNTIME_ERROR_EXIT_CODE
 
     async def run_repl(self) -> int:
         """Read questions until /quit, end of input or Ctrl+C; /new starts a new thread."""
         self.print_line(BANNER)
-        thread_id = new_thread_id()
+        thread_id = new_id()
         while True:
             try:
                 line = await asyncio.to_thread(self.read_line, PROMPT)
@@ -234,7 +243,7 @@ class AgentCli:
             if question == QUIT_COMMAND:
                 return SUCCESS_EXIT_CODE
             if question == NEW_THREAD_COMMAND:
-                thread_id = new_thread_id()
+                thread_id = new_id()
                 self.print_line(NEW_THREAD_NOTICE)
             elif question:
                 await self.ask(question, thread_id)

@@ -7,7 +7,6 @@ These are the calibration targets: with the configured min_dense_score and rrf_k
 from pathlib import Path
 
 import pytest
-from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
 from qdrant_client import QdrantClient
 
@@ -19,9 +18,10 @@ from research_agent.ingestion.pipeline import run_ingestion
 from research_agent.models import Evidence
 from research_agent.retrieval.evaluation import EvalReport, evaluate, load_eval_set
 from research_agent.retrieval.index import Index
-from research_agent.retrieval.search import SearchConfig, Searcher
+from research_agent.retrieval.search import Searcher
 from research_agent.retrieval.store import ChunkStore
-from research_agent.tools.search_10k import TOOL_NAME, make_search_10k
+from research_agent.tools.search_10k import make_search_10k
+from tool_support import call_tool
 
 pytestmark = [
     pytest.mark.embedding_models,
@@ -32,6 +32,7 @@ EVAL_SET_PATH = PROJECT_ROOT / "eval" / "retrieval_set.jsonl"
 EVAL_K = 5
 MIN_HIT_AT_K = 0.8
 FIRST_RISK_FACTOR_PREFIX = "The Company’s operations and performance depend significantly on global and regional"
+THIRD_RISK_FACTOR_PREFIX = "Global markets for the Company’s products and services are highly competitive"
 
 
 @pytest.fixture(scope="module")
@@ -57,7 +58,7 @@ def searcher_and_store(tmp_path_factory: pytest.TempPathFactory, settings: Setti
     )
     store = ChunkStore.load(index_dir)
     index = Index(client, dense_embedder, sparse_embedder)
-    searcher = Searcher(store, index, SearchConfig.from_settings(settings))
+    searcher = Searcher(store, index, settings)
     return searcher, store
 
 
@@ -82,14 +83,6 @@ def tool(searcher_and_store: tuple[Searcher, ChunkStore], settings: Settings) ->
     )
 
 
-async def call(tool: BaseTool, **arguments: object) -> ToolMessage:
-    """Invoke the tool with a tool call and return its message."""
-    tool_call = {"type": "tool_call", "id": "call-1", "name": TOOL_NAME, "args": arguments}
-    message = await tool.ainvoke(tool_call)
-    assert isinstance(message, ToolMessage)
-    return message
-
-
 def test_eval_hit_rate(report: EvalReport) -> None:
     """At least 80% of on-topic questions find an expected section in the top 5."""
     misses = [result.question for result in report.results if result.expected_sections and not result.passed]
@@ -112,23 +105,24 @@ def test_no_on_topic_question_falls_below_the_threshold(report: EvalReport, sett
 
 
 async def test_top_risk_factors_by_position(tool: BaseTool) -> None:
-    """The first three risk factors come back in document order, starting with the macroeconomic one."""
-    message = await call(tool, query="top risk factors", section="item:1A", order_by="position", k=3)
+    """The first three risk factors come back in document order, the third one included: risk factor 2 has twelve
+    parts, and returning them all used to push risk factor 3 past the output cap."""
+    message = await call_tool(tool, query="top risk factors", section="item:1A", order_by="position", k=3)
     evidence: list[Evidence] = message.artifact
     content = str(message.content)
-    assert FIRST_RISK_FACTOR_PREFIX in content
+    assert content.index(FIRST_RISK_FACTOR_PREFIX) < content.index(THIRD_RISK_FACTOR_PREFIX)
     assert all("Item 1A" in item.source for item in evidence)
-    assert len(evidence) >= 3
+    assert len(evidence) == 3
 
 
 async def test_gross_margin_question_finds_the_table(tool: BaseTool) -> None:
     """Required query 2's Apple figure is retrievable by a plain question."""
-    message = await call(tool, query="What was Apple's total gross margin percentage?")
+    message = await call_tool(tool, query="What was Apple's total gross margin percentage?")
     assert "46.9%" in str(message.content)
 
 
 async def test_item_8_search_reaches_the_income_tax_note(tool: BaseTool) -> None:
     """An Item 8 search for the tax rate reaches Note 7, which an exact section filter would miss."""
-    message = await call(tool, query="effective tax rate and provision for income taxes", section="item:8")
+    message = await call_tool(tool, query="effective tax rate and provision for income taxes", section="item:8")
     evidence: list[Evidence] = message.artifact
     assert any("Note 7" in item.source for item in evidence)

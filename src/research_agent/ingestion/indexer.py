@@ -1,6 +1,7 @@
 """Index build (LLD section 6, stage 9): a Qdrant collection with a dense and a sparse vector per chunk."""
 
 from collections.abc import Iterator
+from pathlib import Path
 
 from qdrant_client import QdrantClient, models
 
@@ -8,13 +9,17 @@ from research_agent.ingestion.chunker import embedding_text
 from research_agent.ingestion.embeddings import EMBED_BATCH_SIZE, DenseEmbedder, SparseEmbedder
 from research_agent.models import Chunk
 
+QDRANT_DIRECTORY_NAME = "qdrant"
 COLLECTION_NAME = "filing"
 DENSE_VECTOR_NAME = "dense"
 SPARSE_VECTOR_NAME = "sparse"
 PAYLOAD_SECTION_ID = "section_id"
 PAYLOAD_KIND = "kind"
 
-__all__ = ["COLLECTION_NAME", "DENSE_VECTOR_NAME", "EMBED_BATCH_SIZE", "SPARSE_VECTOR_NAME", "Indexer"]
+
+def open_qdrant(index_dir: Path) -> QdrantClient:
+    """Open the local Qdrant storage in the index folder; local mode allows one client per folder."""
+    return QdrantClient(path=str(index_dir / QDRANT_DIRECTORY_NAME))
 
 
 def batched(chunks: list[Chunk], size: int) -> Iterator[list[Chunk]]:

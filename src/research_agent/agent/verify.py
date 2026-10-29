@@ -18,8 +18,8 @@ from research_agent.agent.render import render_answer
 from research_agent.agent.state import AgentState
 from research_agent.log import NODE_KIND, log_call
 from research_agent.models import Evidence, Verification
+from research_agent.tools.output import CITATION_PATTERN, cited_ids
 
-CITATION_PATTERN = re.compile(r"\[([DWC][0-9a-f]{1,8})\]")
 ASSUMPTIONS_HEADING = "### Assumptions"
 DATA_GAPS_HEADING = "### Data gaps"
 BODY_END_PATTERN = re.compile(rf"^(?:{re.escape(ASSUMPTIONS_HEADING)}|{re.escape(DATA_GAPS_HEADING)})\b", re.MULTILINE)
@@ -27,10 +27,9 @@ URL_PATTERN = re.compile(r"https?://", re.IGNORECASE)
 DIGIT_PATTERN = re.compile(r"\d")
 # A standalone year, as in "fiscal 2025", labels a period rather than stating a figure.
 YEAR_PATTERN = re.compile(r"\b(?:19|20)\d{2}\b")
-# A sentence ends at . ! or ? followed by whitespace and a capital letter or digit, so "Inc. reported" and "8.3%"
-# stay whole, and a marker written after the full stop stays with its sentence.
+# A sentence ends at . ! or ? followed by whitespace and a capital letter or digit, so "8.3%" stays whole and a
+# marker written after the full stop stays with its sentence.
 SENTENCE_BREAK_PATTERN = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9$])")
-ABBREVIATION_PATTERN = re.compile(r"\b(?:Inc|Corp|Co|Ltd|No|U\.S|vs|e\.g|i\.e)\.$")
 LIST_ITEM_PATTERN = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 TABLE_SEPARATOR_PATTERN = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
 EMPHASIS_CHARACTERS = "*_"
@@ -63,12 +62,6 @@ def answer_body(answer: str) -> str:
     return body.strip()
 
 
-def cited_ids(text: str) -> list[str]:
-    """Return the citation IDs in text, each once, in order of first use."""
-    markers = CITATION_PATTERN.findall(text)
-    return list(dict.fromkeys(markers))
-
-
 def has_marker(text: str) -> bool:
     """Tell whether text cites any source."""
     return CITATION_PATTERN.search(text) is not None
@@ -79,18 +72,6 @@ def has_digit(text: str) -> bool:
     without_markers = CITATION_PATTERN.sub("", text)
     without_years = YEAR_PATTERN.sub("", without_markers)
     return DIGIT_PATTERN.search(without_years) is not None
-
-
-def sentences(text: str) -> list[str]:
-    """Split text into sentences, keeping abbreviations such as Inc. inside their sentence."""
-    parts = SENTENCE_BREAK_PATTERN.split(text)
-    merged: list[str] = []
-    for part in parts:
-        if merged and ABBREVIATION_PATTERN.search(merged[-1]):
-            merged[-1] = f"{merged[-1]}{PARAGRAPH_JOINER}{part}"
-        else:
-            merged.append(part)
-    return merged
 
 
 def is_exempt(line: str) -> bool:
@@ -153,9 +134,12 @@ def claim_units(body: str) -> list[str]:
 
 
 def figures_after_last_marker(unit: str) -> list[str]:
-    """Return the sentences with a number that no marker follows within the unit."""
+    """Return the sentences with a number that no marker follows within the unit.
+
+    A marker covers the sentences before it, so splitting at an abbreviation such as "U.S." changes nothing.
+    """
     pending: list[str] = []
-    for sentence in sentences(unit):
+    for sentence in SENTENCE_BREAK_PATTERN.split(unit):
         if has_marker(sentence):
             pending = []
         elif has_digit(sentence):

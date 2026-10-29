@@ -13,10 +13,10 @@ from bs4.element import PageElement, Tag
 from pydantic import BaseModel, Field
 
 from research_agent.ingestion.tables import TableCell, extract_rows, render_table
-from research_agent.ingestion.text import NON_BREAKING_SPACE, SPACE, element_text, is_text_node
+from research_agent.ingestion.text import element_text, is_text_node
 
 # Bump when parser output changes; the manifest records it and a mismatch forces a re-ingest.
-PARSER_VERSION = "1"
+PARSER_VERSION = "2"
 
 HTML_PARSER = "lxml"
 INLINE_XBRL_HEADER_TAG = "ix:header"
@@ -44,6 +44,8 @@ COVER_TITLE = "Cover"
 PART_HEADING_PATTERN = re.compile(r"^PART\s+(IV|I{1,3})$", re.IGNORECASE)
 ITEM_HEADING_PATTERN = re.compile(r"^Item\s+(\d+[A-C]?)\.(?:\s|$)", re.IGNORECASE)
 NOTE_HEADING_PATTERN = re.compile(r"^Note\s+(\d+)\s*[–—-]", re.IGNORECASE)
+# The auditor's reports follow the last note but belong to Item 8 itself.
+AUDITOR_REPORT_PATTERN = re.compile(r"^Report of Independent Registered Public Accounting Firm", re.IGNORECASE)
 PART_TITLE_PREFIX = "Part "
 PART_ID_PREFIX = "part:"
 ITEM_ID_PREFIX = "item:"
@@ -89,7 +91,10 @@ def remove_elements(elements: list[Tag]) -> None:
 
 
 def clean(html: str) -> BeautifulSoup:
-    """Parse the filing and strip the inline-XBRL header, hidden elements, scripts, styles and non-breaking spaces."""
+    """Parse the filing and strip the inline-XBRL header, hidden elements, scripts and styles.
+
+    Non-breaking spaces need no pass here: text extraction normalizes them with all other whitespace.
+    """
     with warnings.catch_warnings():
         # EDGAR inline-XBRL files carry an XML declaration but parse correctly as HTML.
         warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
@@ -100,11 +105,6 @@ def clean(html: str) -> BeautifulSoup:
         *document.find_all(REMOVED_TAGS),
     ]
     remove_elements([element for element in removable if isinstance(element, Tag)])
-    text_nodes = [node for node in document.find_all(string=True) if is_text_node(node)]
-    for node in text_nodes:
-        if NON_BREAKING_SPACE in node:
-            normalized_text = node.replace(NON_BREAKING_SPACE, SPACE)
-            node.replace_with(normalized_text)
     return document
 
 
@@ -253,6 +253,10 @@ class SectionCursor:
         if note_match is not None and self.item_number == NOTES_ITEM_NUMBER:
             self.open_note(note_match.group(1), block.text)
             return True
+        if self.item_number == NOTES_ITEM_NUMBER and AUDITOR_REPORT_PATTERN.match(block.text):
+            self.close_note()
+            self.subsection = block.text
+            return True
         if self.is_subsection_heading(block):
             self.subsection = block.text
             return True
@@ -286,6 +290,12 @@ class SectionCursor:
         """Open a note to the financial statements within Item 8."""
         self.section_id = f"{NOTE_ID_PREFIX}{number}"
         self.section_base_path = [*self.item_path, heading]
+        self.subsection = None
+
+    def close_note(self) -> None:
+        """Return from a note to Item 8 itself, which the auditor's reports after the notes belong to."""
+        self.section_id = f"{ITEM_ID_PREFIX}{NOTES_ITEM_NUMBER}"
+        self.section_base_path = self.item_path
         self.subsection = None
 
 

@@ -35,6 +35,7 @@ ITEM_8_HEADING = "Item 8. Financial Statements and Supplementary Data"
 ITEM_9_HEADING = "Item 9. Changes in and Disagreements with Accountants on Accounting and Financial Disclosure"
 NOTE_1_HEADING = "Note 1 – Summary of Significant Accounting Policies"
 NOTE_2_HEADING = "Note 2 – Revenue"
+AUDITOR_REPORT_HEADING = "Report of Independent Registered Public Accounting Firm"
 FAKE_NOTE_HEADING = "Note 5 – Not a Note Outside Item 8"
 
 MACROECONOMIC_CATEGORY = "Macroeconomic and Industry Risks"
@@ -167,14 +168,15 @@ class TestClean:
         assert "SCRIPT_TEXT" not in document_text
         assert "STYLE_TEXT" not in document_text
 
-    def test_normalizes_non_breaking_spaces(self, cleaned_document: BeautifulSoup) -> None:
-        """No non-breaking space survives cleaning."""
-        document_text = cleaned_document.get_text()
-        assert "\xa0" not in document_text
-
 
 class TestLinearize:
     """Stage 2: one block per top-level div, p or table, with bold and italic flags."""
+
+    def test_normalizes_non_breaking_spaces(self, linearized_blocks: list[Block]) -> None:
+        """Text extraction turns non-breaking spaces into plain spaces, in text blocks and table cells alike."""
+        cell_texts = [cell.text for block in linearized_blocks for row in block.rows for cell in row]
+        block_texts = [block.text for block in linearized_blocks]
+        assert all("\xa0" not in text for text in [*block_texts, *cell_texts])
 
     def test_emits_paragraph_elements_as_blocks(self, linearized_blocks: list[Block]) -> None:
         """A top-level p is a block like a div."""
@@ -340,6 +342,14 @@ class TestAssignSections:
         assert note_1_block.section_path == [PART_II, ITEM_8_HEADING, NOTE_1_HEADING, "Basis of Presentation"]
         assert note_2_block.section_id == "note:2"
         assert note_2_block.section_path == [PART_II, ITEM_8_HEADING, NOTE_2_HEADING]
+
+    def test_auditor_report_after_the_notes_belongs_to_item_8(self, sectioned_blocks: list[Block]) -> None:
+        """The auditor's report follows the last note but is part of Item 8, so it isn't cited as Note 3."""
+        heading = find_heading(sectioned_blocks, AUDITOR_REPORT_HEADING)
+        block = find_block(sectioned_blocks, "In our opinion, the consolidated financial statements present fairly")
+        assert heading.section_id == "item:8"
+        assert block.section_id == "item:8"
+        assert block.section_path == [PART_II, ITEM_8_HEADING, AUDITOR_REPORT_HEADING]
 
     def test_note_heading_outside_item_8_is_only_a_subsection(self, sectioned_blocks: list[Block]) -> None:
         """'Note 5 – ...' under Item 9 is a subsection heading, not a note section."""

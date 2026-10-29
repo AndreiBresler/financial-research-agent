@@ -1,6 +1,6 @@
-"""Builds the real agent from Settings: the model, the tools and the graph. Used by main.py and run_e2e.py.
+"""Builds the real agent from Settings: the model, the tools and the graph. Used by main.py and the e2e tests.
 
-The entry scripts own the Qdrant client's lifecycle and pass it in; everything else is created here, once.
+The entry scripts open and close the Qdrant client and pass it in; everything else is created here, once.
 """
 
 from datetime import date
@@ -15,10 +15,9 @@ from tavily import AsyncTavilyClient
 from research_agent.agent.graph import AgentGraph, build_checkpointer, build_graph
 from research_agent.config import Settings
 from research_agent.ingestion.embeddings import FastEmbedDense, FastEmbedSparse
-from research_agent.ingestion.pipeline import QDRANT_DIRECTORY_NAME
 from research_agent.prompts import Prompts
 from research_agent.retrieval.index import Index
-from research_agent.retrieval.search import SearchConfig, Searcher
+from research_agent.retrieval.search import Searcher
 from research_agent.retrieval.store import ChunkStore
 from research_agent.tools.calculator import make_calculator
 from research_agent.tools.search_10k import make_search_10k
@@ -32,11 +31,6 @@ def secret_value(secret: SecretStr | None) -> str:
     if secret is None:
         raise ValueError("a required API key is missing")
     return secret.get_secret_value()
-
-
-def open_qdrant(settings: Settings) -> QdrantClient:
-    """Open the local Qdrant index; the caller closes it."""
-    return QdrantClient(path=str(settings.index_dir / QDRANT_DIRECTORY_NAME))
 
 
 def build_model(settings: Settings) -> BaseChatModel:
@@ -75,7 +69,7 @@ def build_agent(settings: Settings, qdrant_client: QdrantClient) -> AgentGraph:
     dense_embedder = FastEmbedDense(settings.dense_model)
     sparse_embedder = FastEmbedSparse(settings.sparse_model)
     index = Index(qdrant_client, dense_embedder, sparse_embedder)
-    searcher = Searcher(store, index, SearchConfig.from_settings(settings))
+    searcher = Searcher(store, index, settings)
     return build_graph(
         llm=build_model(settings),
         tools=build_tools(settings, store, searcher),

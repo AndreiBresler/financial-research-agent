@@ -7,10 +7,10 @@ requires-python = ">=3.12"
 [tool.pytest.ini_options]
 pythonpath = ["src", "tests"]
 testpaths = ["tests"]
-addopts = "-m 'not integration and not embedding_models'"
+addopts = "-m 'not e2e and not embedding_models'"
 asyncio_mode = "auto"
 markers = [
-    "integration: needs real API keys and costs tokens; run with -m integration",
+    "e2e: calls the real Claude and Tavily APIs; needs API keys and costs tokens; run with -m e2e",
     "embedding_models: downloads the real embedding models (~80 MB); run with -m embedding_models",
 ]
 
@@ -30,7 +30,7 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 "tests/unit/test_tables.py" = ["E501"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["research_agent", "filing_support", "ingestion_fakes", "retrieval_fakes", "web_fakes", "graph_fakes", "graph_support", "main"]
+known-first-party = ["research_agent", "filing_support", "ingestion_fakes", "retrieval_fakes", "web_fakes", "graph_fakes", "graph_support", "tool_support", "e2e_support", "main"]
 
 [tool.mypy]
 python_version = "3.12"

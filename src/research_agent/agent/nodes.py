@@ -31,7 +31,8 @@ TOOL_RESULT_SEPARATOR = "\n\n"
 NO_PLAN = "No plan."
 THINKING_BLOCK_TYPES = frozenset({"thinking", "redacted_thinking"})
 BLOCK_TYPE_KEY = "type"
-# Claude's native structured output: Claude Sonnet 5.5 rejects the forced tool call LangChain uses by default.
+# Claude's native structured output: Claude Sonnet 5.5, which LLM_MODEL can select, rejects the forced tool call
+# LangChain uses by default.
 STRUCTURED_OUTPUT_METHOD = "json_schema"
 
 

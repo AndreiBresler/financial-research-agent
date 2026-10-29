@@ -48,16 +48,15 @@ class ChunkStore:
         note_sections = [section for section in self.ordered_sections if section.startswith(NOTE_ID_PREFIX)]
         return [section_id, *note_sections]
 
-    def first_units(self, section_id: str, k: int, kind: str | None = None) -> list[list[Chunk]]:
-        """Return the first k units of a section's scope in document order, each with all its parts."""
+    def first_units(self, section_id: str, k: int, kind: str | None = None) -> list[Chunk]:
+        """Return the opening part of each of the first k units of a section's scope, in document order.
+
+        One part per unit, so a long unit (a risk factor split into twelve parts) can't push the next ones out of
+        the tool's output cap; the opening part carries the unit's title.
+        """
         scope = set(self.section_scope(section_id))
-        units: dict[tuple[str, int], list[Chunk]] = {}
+        openings: dict[tuple[str, int], Chunk] = {}
         for chunk in self.chunks:
-            in_scope = chunk.section_id in scope
-            kind_matches = kind is None or chunk.kind == kind
-            if in_scope and kind_matches:
-                unit_key = (chunk.section_id, chunk.position)
-                unit_chunks = units.setdefault(unit_key, [])
-                unit_chunks.append(chunk)
-        ordered_units = list(units.values())
-        return ordered_units[:k]
+            if chunk.section_id in scope and (kind is None or chunk.kind == kind):
+                openings.setdefault((chunk.section_id, chunk.position), chunk)
+        return list(openings.values())[:k]

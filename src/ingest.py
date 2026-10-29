@@ -3,25 +3,19 @@
 Wiring only: loads Settings and the embedding models, then runs the ingestion pipeline. No API keys are needed.
 """
 
-import sys
-
-from qdrant_client import QdrantClient
+from contextlib import closing
 
 from research_agent.config import Settings
 from research_agent.ingestion.embeddings import EmbeddingTokenCounter, FastEmbedDense, FastEmbedSparse
-from research_agent.ingestion.indexer import Indexer
-from research_agent.ingestion.pipeline import QDRANT_DIRECTORY_NAME, run_ingestion
-
-SUCCESS_EXIT_CODE = 0
+from research_agent.ingestion.indexer import Indexer, open_qdrant
+from research_agent.ingestion.pipeline import run_ingestion
 
 
-def main() -> int:
+def main() -> None:
     """Rebuild data/index from the configured filing."""
     settings = Settings()
     settings.index_dir.mkdir(parents=True, exist_ok=True)
-    qdrant_path = settings.index_dir / QDRANT_DIRECTORY_NAME
-    client = QdrantClient(path=str(qdrant_path))
-    try:
+    with closing(open_qdrant(settings.index_dir)) as client:
         dense_embedder = FastEmbedDense(settings.dense_model)
         sparse_embedder = FastEmbedSparse(settings.sparse_model)
         token_counter = EmbeddingTokenCounter(settings.dense_model)
@@ -34,10 +28,7 @@ def main() -> int:
             indexer=indexer,
             count_tokens=token_counter,
         )
-    finally:
-        client.close()
-    return SUCCESS_EXIT_CODE
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

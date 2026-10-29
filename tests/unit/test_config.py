@@ -13,7 +13,7 @@ FAKE_ANTHROPIC_KEY = "sk-ant-test-not-a-real-key"
 FAKE_TAVILY_KEY = "tvly-test-not-a-real-key"
 
 EXPECTED_DEFAULTS = {
-    "llm_model": "anthropic:claude-sonnet-5-5",
+    "llm_model": "anthropic:claude-haiku-5-5",
     "llm_timeout_s": 60,
     "source_html": Path("data/aapl-20250927.htm"),
     "filing_label": "Form 10-K FY2025",

@@ -6,7 +6,6 @@ wrapper tags, and wrapped, so a page can't close its block and speak as the tool
 """
 
 import asyncio
-import hashlib
 import re
 from collections.abc import Callable
 from datetime import date
@@ -17,7 +16,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from research_agent.log import TOOL_KIND, log_call
 from research_agent.models import Evidence
-from research_agent.tools.output import HEADER_SEPARATOR, NO_RELEVANT_CONTENT, Passage, fit_to_limit, truncate
+from research_agent.tools.output import (
+    HEADER_SEPARATOR,
+    NO_RELEVANT_CONTENT,
+    Passage,
+    fit_to_limit,
+    hashed_citation_id,
+    truncate,
+)
 
 TOOL_NAME = "web_search"
 WEB_UNAVAILABLE = "ERROR web_unavailable"
@@ -37,8 +43,6 @@ SOURCE_SEPARATOR = ", "
 REASON_END = "."
 WEB_EVIDENCE_KIND: Literal["web"] = "web"
 WEB_ID_PREFIX = "W"
-WEB_ID_HEX_CHARS = 6
-URL_ENCODING = "utf-8"
 
 
 class WebSearchClient(Protocol):
@@ -68,9 +72,7 @@ class WebResult(BaseModel):
 
 def citation_id(url: str) -> str:
     """Return the stable W ID, so a page found by two searches keeps one marker."""
-    encoded_url = url.encode(URL_ENCODING)
-    digest = hashlib.sha1(encoded_url).hexdigest()
-    return f"{WEB_ID_PREFIX}{digest[:WEB_ID_HEX_CHARS]}"
+    return hashed_citation_id(WEB_ID_PREFIX, url)
 
 
 def parse_results(response: dict[str, Any]) -> list[WebResult]:

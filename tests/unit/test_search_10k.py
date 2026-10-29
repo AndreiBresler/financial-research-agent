@@ -1,15 +1,11 @@
 """Unit tests for the search_10k tool (LLD section 7): arguments, output format, Evidence, position mode and errors."""
 
-import re
-
 import pytest
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
 from pydantic import ValidationError
 
 from research_agent.models import Evidence
-from research_agent.retrieval.index import Index
-from research_agent.retrieval.search import SearchConfig, Searcher
 from research_agent.retrieval.store import ChunkStore
 from research_agent.tools.output import NO_RELEVANT_CONTENT
 from research_agent.tools.search_10k import (
@@ -17,52 +13,20 @@ from research_agent.tools.search_10k import (
     TOOL_NAME,
     UNKNOWN_SECTION,
     SearchTenKArguments,
-    make_search_10k,
+    evidence,
+    passage,
 )
-from retrieval_fakes import build_corpus, index_corpus
+from retrieval_fakes import TEST_FILING_LABEL, build_corpus, build_search_10k
+from tool_support import call_tool, evidence_of, markers
 
-FILING_LABEL = "Form 10-K FY2025"
-TOP_K = 2
 LARGE_OUTPUT_LIMIT = 12_000
 SMALL_OUTPUT_LIMIT = 120
-MARKER_PATTERN = re.compile(r"^\[(D\d+)\] ", re.MULTILINE)
-
-
-def build_tool(tool_output_max_chars: int = LARGE_OUTPUT_LIMIT) -> BaseTool:
-    """Build search_10k over the indexed corpus."""
-    corpus = build_corpus()
-    client, dense_embedder, sparse_embedder = index_corpus(corpus)
-    store = ChunkStore(corpus)
-    config = SearchConfig(min_dense_score=0.5, prefetch_limit=20, rrf_k=60, xref_max_extra=3)
-    searcher = Searcher(store, Index(client, dense_embedder, sparse_embedder), config)
-    return make_search_10k(
-        store=store,
-        searcher=searcher,
-        top_k=TOP_K,
-        tool_output_max_chars=tool_output_max_chars,
-        filing_label=FILING_LABEL,
-    )
 
 
 @pytest.fixture
 def tool() -> BaseTool:
     """Return the tool with the default output limit."""
-    return build_tool()
-
-
-async def call(tool: BaseTool, **arguments: object) -> ToolMessage:
-    """Invoke the tool the way the graph's ToolNode does, with a tool call, and return its message."""
-    tool_call = {"type": "tool_call", "id": "call-1", "name": TOOL_NAME, "args": arguments}
-    message = await tool.ainvoke(tool_call)
-    assert isinstance(message, ToolMessage)
-    return message
-
-
-def evidence_of(message: ToolMessage) -> list[Evidence]:
-    """Return the Evidence artifact attached to a tool message."""
-    artifact = message.artifact
-    assert isinstance(artifact, list)
-    return artifact
+    return build_search_10k()
 
 
 def assert_tool_error(message: ToolMessage, error_code: str) -> None:
@@ -70,12 +34,6 @@ def assert_tool_error(message: ToolMessage, error_code: str) -> None:
     assert message.status == "error"
     assert str(message.content).startswith(error_code)
     assert message.artifact is None
-
-
-def markers(message: ToolMessage) -> list[str]:
-    """Return the citation IDs the model sees, in order."""
-    content = str(message.content)
-    return MARKER_PATTERN.findall(content)
 
 
 class TestDefinition:
@@ -111,7 +69,7 @@ class TestRelevance:
 
     async def test_passages_carry_marker_path_and_page(self, tool: BaseTool) -> None:
         """Each passage opens with its marker, the short path and page, then the chunk text."""
-        message = await call(tool, query="tax rates", section="item:1A", k=1)
+        message = await call_tool(tool, query="tax rates", section="item:1A", k=1)
         content = str(message.content)
         assert content.startswith(
             "[D4] Part I › Item 1A › Financial Risks (p. 12)\nChanges in tax rates can raise the Company’s tax expense."
@@ -119,14 +77,14 @@ class TestRelevance:
 
     async def test_cross_referenced_passages_follow_the_ranked_ones(self, tool: BaseTool) -> None:
         """The tax risk's references to Notes 7 and 3 come after it, with Item 8 shortened in the path."""
-        message = await call(tool, query="tax rates", section="item:1A", k=1)
+        message = await call_tool(tool, query="tax rates", section="item:1A", k=1)
         content = str(message.content)
         assert markers(message) == ["D4", "D12", "D10"]
         assert "[D12] Part II › Item 8 › Note 7 – Provision (p. 42)" in content
 
     async def test_evidence_matches_the_passages_shown(self, tool: BaseTool) -> None:
         """One Evidence per passage, with the stable D ID and the source line the renderer will print."""
-        message = await call(tool, query="tax rates", section="item:1A", k=1)
+        message = await call_tool(tool, query="tax rates", section="item:1A", k=1)
         evidence = evidence_of(message)
         assert [item.id for item in evidence] == markers(message)
         assert evidence[0] == Evidence(
@@ -135,36 +93,40 @@ class TestRelevance:
 
     async def test_k_defaults_to_top_k(self) -> None:
         """Without k, the tool returns top_k ranked passages (plus any cross-references)."""
-        capped_tool = build_tool()
-        message = await call(capped_tool, query="services margin", section="item:7")
+        capped_tool = build_search_10k()
+        message = await call_tool(capped_tool, query="services margin", section="item:7")
         assert markers(message) == ["D6", "D7"]
 
 
 class TestPosition:
     """order_by=position returns the first k units of a section, in document order."""
 
-    async def test_item_1a_returns_only_risk_factors_with_all_parts(self, tool: BaseTool) -> None:
-        """'Top N risk factors' skips the intro and keeps both parts of a split risk factor."""
-        message = await call(tool, query="risk factors", section="item:1A", order_by="position", k=2)
-        content = str(message.content)
-        assert markers(message) == ["D3", "D4", "D5"]
-        assert "[D5] Part I › Item 1A › Financial Risks (pp. 13–14)" in content
-
-    async def test_page_ranges_appear_in_evidence(self, tool: BaseTool) -> None:
-        """A chunk spanning pages cites them as a range."""
-        message = await call(tool, query="risk factors", section="item:1A", order_by="position", k=2)
-        evidence = {item.id: item for item in evidence_of(message)}
-        assert evidence["D5"].source == "Form 10-K FY2025 › Part I › Item 1A › Financial Risks, pp. 13–14"
+    async def test_item_1a_returns_the_opening_part_of_each_risk_factor(self, tool: BaseTool) -> None:
+        """'Top N risk factors' skips the intro and returns one part per risk factor, so a long one can't crowd
+        the next out of the output cap."""
+        message = await call_tool(tool, query="risk factors", section="item:1A", order_by="position", k=2)
+        assert markers(message) == ["D3", "D4"]
 
     async def test_other_sections_return_units_of_every_kind(self, tool: BaseTool) -> None:
         """Outside Item 1A, position order includes every unit; Item 8 continues into its notes."""
-        message = await call(tool, query="statements", section="item:8", order_by="position", k=2)
+        message = await call_tool(tool, query="statements", section="item:8", order_by="position", k=2)
         assert markers(message) == ["D8", "D9"]
 
     async def test_position_needs_a_section(self, tool: BaseTool) -> None:
         """Without a section there is no document order to follow, so the model is told to add one."""
-        message = await call(tool, query="risk factors", order_by="position")
+        message = await call_tool(tool, query="risk factors", order_by="position")
         assert_tool_error(message, MISSING_SECTION)
+
+
+class TestPageRanges:
+    """A chunk spanning pages cites them as a range, for the model and in Sources."""
+
+    def test_page_range_in_passage_and_evidence(self) -> None:
+        """The second part of the tax risk factor spans pages 13 and 14."""
+        chunk = ChunkStore(build_corpus()).get(5)
+        assert passage(chunk).startswith("[D5] Part I › Item 1A › Financial Risks (pp. 13–14)")
+        expected_source = "Form 10-K FY2025 › Part I › Item 1A › Financial Risks, pp. 13–14"
+        assert evidence(chunk, TEST_FILING_LABEL).source == expected_source
 
 
 class TestKind:
@@ -172,30 +134,30 @@ class TestKind:
 
     async def test_table_search_returns_tables_only(self, tool: BaseTool) -> None:
         """'Find the figures' as a table search returns the revenue table first and no narrative."""
-        message = await call(tool, query="revenue", kind="table")
+        message = await call_tool(tool, query="revenue", kind="table")
         message_markers = markers(message)
         assert message_markers[0] == "D8"
         assert set(message_markers) <= {"D7", "D8"}
 
     async def test_position_with_a_kind_overrides_the_risk_factor_default(self, tool: BaseTool) -> None:
         """Asking Item 1A for text by position returns its intro instead of the risk factors."""
-        message = await call(tool, query="intro", section="item:1A", order_by="position", kind="text")
+        message = await call_tool(tool, query="intro", section="item:1A", order_by="position", kind="text")
         assert markers(message) == ["D2"]
 
     async def test_position_with_a_kind_outside_item_1a(self, tool: BaseTool) -> None:
         """Item 8's tables in document order: the statement table, not the notes' text."""
-        message = await call(tool, query="statements", section="item:8", order_by="position", kind="table")
+        message = await call_tool(tool, query="statements", section="item:8", order_by="position", kind="table")
         assert markers(message) == ["D8"]
 
     async def test_miss_with_a_kind_suggests_dropping_it(self, tool: BaseTool) -> None:
         """No tax table exists, so the model is told to retry without the kind filter."""
-        message = await call(tool, query="tax", kind="table")
+        message = await call_tool(tool, query="tax", kind="table")
         assert str(message.content) == f"{NO_RELEVANT_CONTENT} for kind table: retry without the kind filter"
         assert evidence_of(message) == []
 
     async def test_miss_with_section_and_kind_names_both(self, tool: BaseTool) -> None:
         """With both filters set, the retry advice names both."""
-        message = await call(tool, query="tax rates", section="item:1A", kind="table")
+        message = await call_tool(tool, query="tax rates", section="item:1A", kind="table")
         expected = f"{NO_RELEVANT_CONTENT} in item:1A for kind table: retry without the section or kind filter"
         assert str(message.content) == expected
 
@@ -205,7 +167,7 @@ class TestErrors:
 
     async def test_unknown_section_lists_the_valid_ones(self, tool: BaseTool) -> None:
         """An invalid section ID returns the IDs the model can use."""
-        message = await call(tool, query="tax", section="item:99")
+        message = await call_tool(tool, query="tax", section="item:99")
         content = str(message.content)
         assert_tool_error(message, UNKNOWN_SECTION)
         assert "item:1A" in content
@@ -213,13 +175,13 @@ class TestErrors:
 
     async def test_not_found_in_a_section_suggests_dropping_the_filter(self, tool: BaseTool) -> None:
         """A miss inside a section tells the model to retry without the section filter."""
-        message = await call(tool, query="tax rates", section="item:1")
+        message = await call_tool(tool, query="tax rates", section="item:1")
         assert str(message.content) == f"{NO_RELEVANT_CONTENT} in item:1: retry without the section filter"
         assert evidence_of(message) == []
 
     async def test_not_found_anywhere(self, tool: BaseTool) -> None:
         """A miss across the whole filing says the filing doesn't cover it; that is a finding, not a failure."""
-        message = await call(tool, query="weather forecast")
+        message = await call_tool(tool, query="weather forecast")
         assert str(message.content).startswith(NO_RELEVANT_CONTENT)
         assert message.status == "success"
         assert evidence_of(message) == []
@@ -230,8 +192,8 @@ class TestOutputLimit:
 
     async def test_drops_whole_passages_and_their_evidence(self) -> None:
         """Under a small cap, the output stays within it and Evidence covers exactly the passages shown."""
-        small_tool = build_tool(tool_output_max_chars=SMALL_OUTPUT_LIMIT)
-        message = await call(small_tool, query="tax rates", section="item:1A", k=1)
+        small_tool = build_search_10k(tool_output_max_chars=SMALL_OUTPUT_LIMIT)
+        message = await call_tool(small_tool, query="tax rates", section="item:1A", k=1)
         evidence = evidence_of(message)
         assert len(str(message.content)) <= SMALL_OUTPUT_LIMIT
         assert markers(message)

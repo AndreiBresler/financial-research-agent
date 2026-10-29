@@ -1,25 +1,16 @@
 """Smoke test for the composition root, src/main.py: it refuses to start before the index exists.
 
-The rest of main.py is wiring, exercised by the integration tests; this checks the startup gate without loading
+The rest of main.py is wiring, exercised by the end-to-end tests; this checks the startup gate without loading
 models or calling an API.
 """
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-import structlog
 
 import main as main_script
 from research_agent.cli import INDEX_NOT_READY_EXIT_CODE, INGEST_COMMAND
 from research_agent.ingestion.manifest import MISSING_INDEX_REASON
-
-
-@pytest.fixture(autouse=True)
-def reset_structlog() -> Iterator[None]:
-    """main() configures logging globally; undo it after the test."""
-    yield
-    structlog.reset_defaults()
 
 
 def test_missing_index_exits_with_code_2(

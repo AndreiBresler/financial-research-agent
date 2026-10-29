@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 ChunkKind = Literal["text", "risk_factor", "table"]
 ToolName = Literal["search_10k", "web_search", "calculator"]
 MAX_PLAN_STEPS = 6
+SECTION_PATH_SEPARATOR = " › "  # joins a section path for embedding, for the model and in Sources
 
 
 class Chunk(BaseModel):

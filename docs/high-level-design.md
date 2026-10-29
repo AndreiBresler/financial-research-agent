@@ -1,6 +1,6 @@
 # Financial Research Agent — High-Level Design
 
-**Author:** Andrei Bresler · **Version:** 1.4 · **Date:** 2026-10-29 · **Status:** Draft
+**Author:** Andrei Bresler · **Version:** 1.5 · **Date:** 2026-10-29 · **Status:** Draft
 
 ## 1. Summary
 
@@ -37,7 +37,7 @@ flowchart LR
     T --> TV["Tavily"]
 ```
 
-**CLI:** an interactive REPL, or one-shot with `python src/main.py "question"`. It streams the plan, each tool call (for example `[search_10k] Item 1A, by position`) and the cited answer; `--verbose` adds the full trace.
+**CLI:** an interactive REPL, or one-shot with `python src/main.py "question"`. It streams the plan, each tool call (for example `→ search_10k(section="item:1A", order_by="position", k=3)`) and its result and the cited answer; `--verbose` adds the full trace.
 
 **Key choices:** a custom LangGraph `StateGraph`, so plan and verify are explicit, testable nodes; a targeted BeautifulSoup parser, because 10-K structure lives in styling rather than tags and generic loaders lose it; Qdrant local mode with FastEmbed (`bge-small` + BM25) for hybrid search with no server or GPU; `simpleeval`, because LLMs are unreliable at arithmetic and `eval` is unsafe; Claude via `init_chat_model`, so the provider and pinned model version are configuration. Also: Tavily, Pydantic v2, pydantic-settings, structlog, pytest.
 
@@ -53,7 +53,7 @@ flowchart LR
 - **plan:** a structured plan (steps and tools), streamed to the user.
 - **agent ⇄ tools:** the LLM picks tools; `ToolNode` runs them in parallel and stores each result in an evidence registry under a citation ID: `D` 10-K, `W` web, `C` calculation.
 - **verify (code, not LLM):** every marker must resolve to this run's evidence; every paragraph and bullet must carry a marker, as must every sentence with a number. Failures appear as a warning. This proves traceability, not correctness; evaluation covers correctness (§7, §8).
-- **Limits and state:** a step budget and per-call timeouts; at the limit, the agent answers with what it has and lists the gaps. State is typed (messages, plan, evidence, step count); `InMemorySaver` keeps the conversation for follow-up questions.
+- **Limits and state:** a step budget and per-call timeouts; at the limit, the agent answers with what it has and lists the gaps. State is typed (messages, plan, tool-round count, final answer); the evidence registry is derived from the tool messages, not stored; `InMemorySaver` keeps the conversation for follow-up questions.
 
 |Tool|Input|Use for|Returns|
 |---|---|---|---|
@@ -106,7 +106,7 @@ Tool errors return to the model as typed tool messages, not exceptions, so the a
 |Index missing or mismatched|The CLI refuses to start (manifest check) and prints the ingest command.|
 
 - **Security:** web content is wrapped as untrusted and its instructions are ignored; all tools are read-only, so injected text cannot cause side effects. Inputs are public, so a public LLM API is acceptable for the demo. Keys come only from the environment and are never logged; the calculator is arithmetic-only; input and tool-output sizes are capped.
-- **Tests:** unit (parser, retrieval filters, verifier, calculator); graph tests with scripted fake models (normal, tool-failure and budget paths, no API keys); integration tests for both queries (tools called, R&D ≈ 8.3% of net sales, gross margin ≈ 46.9%, citations resolve).
+- **Tests:** unit (parser, retrieval filters, verifier, calculator); graph tests with scripted fake models (normal, tool-failure and budget paths, no API keys); end-to-end tests for both queries (tools called, R&D ≈ 8.3% of net sales, gross margin ≈ 46.9%, citations resolve).
 - **Retrieval eval:** about 15 questions with their expected 10-K section, scored as hit@5; re-run after any parsing, chunking or embedding change.
 - **Observability:** a structured log per node and tool call (run ID, latency, tokens, outcome); optional LangSmith tracing.
 

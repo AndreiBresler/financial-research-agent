@@ -4,8 +4,16 @@ from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from e2e_support import (
+    AgentQuery,
+    QueryResult,
+    check_result,
+    format_report,
+    load_agent_queries,
+    summary_lines,
+    tools_in_order,
+)
 from filing_support import PROJECT_ROOT
-from research_agent.e2e import AgentQuery, QueryResult, check_result, format_report, load_agent_queries, tools_in_order
 from research_agent.models import Verification
 
 QUERIES_PATH = PROJECT_ROOT / "eval" / "agent_queries.jsonl"
@@ -129,3 +137,17 @@ class TestReport:
             name="ok", question="Q?", tools_used=["search_10k"], answer="A [D4].", failures=[], warnings=["uncited: x"]
         )
         assert "**Result:** passed · **Citation warnings:** 1" in format_report([result])
+
+
+class TestSummary:
+    """The end-of-run summary shows each question with the agent's full answer."""
+
+    def test_summary_shows_question_tools_outcome_and_answer(self) -> None:
+        """A reviewer sees what was asked, which tools ran, whether it passed, and the rendered answer."""
+        result = QueryResult(
+            name="query_1", question="Q1?", tools_used=["search_10k", "calculator"], answer=GOOD_ANSWER, failures=[]
+        )
+        lines = summary_lines(result)
+        assert lines[0] == "Q: Q1?"
+        assert lines[1] == "Tools: search_10k, calculator · Result: passed"
+        assert GOOD_ANSWER in lines

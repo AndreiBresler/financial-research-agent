@@ -7,43 +7,23 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from research_agent.config import Settings
 from research_agent.models import Chunk
-from research_agent.retrieval.index import Index
-from research_agent.retrieval.search import NotFound, SearchConfig, Searcher
-from research_agent.retrieval.store import ChunkStore
-from retrieval_fakes import build_corpus, index_corpus
+from research_agent.retrieval.search import NotFound, Searcher
+from retrieval_fakes import build_searcher
 
-MIN_DENSE_SCORE = 0.5
-PREFETCH_LIMIT = 20
-RRF_K = 60
 CONCURRENT_SEARCHES = 8
-
-
-def make_searcher(xref_max_extra: int) -> Searcher:
-    """Index the corpus and return a searcher with the given cross-reference cap."""
-    corpus = build_corpus()
-    client, dense_embedder, sparse_embedder = index_corpus(corpus)
-    index = Index(client, dense_embedder, sparse_embedder)
-    config = SearchConfig(
-        min_dense_score=MIN_DENSE_SCORE,
-        prefetch_limit=PREFETCH_LIMIT,
-        rrf_k=RRF_K,
-        xref_max_extra=xref_max_extra,
-    )
-    return Searcher(ChunkStore(corpus), index, config)
 
 
 @pytest.fixture
 def plain_searcher() -> Searcher:
     """Return a searcher that adds no cross-referenced chunks, to test retrieval alone."""
-    return make_searcher(xref_max_extra=0)
+    return build_searcher(xref_max_extra=0)
 
 
 @pytest.fixture
 def searcher() -> Searcher:
     """Return a searcher that adds up to 3 cross-referenced chunks."""
-    return make_searcher(xref_max_extra=3)
+    return build_searcher(xref_max_extra=3)
 
 
 def found(result: list[Chunk] | NotFound) -> list[Chunk]:
@@ -56,21 +36,6 @@ def sequence_numbers(result: list[Chunk] | NotFound) -> list[int]:
     """Return the sequence numbers of a successful search, in rank order."""
     chunks = found(result)
     return [chunk.seq for chunk in chunks]
-
-
-class TestSearchConfig:
-    """The searcher's thresholds come from Settings."""
-
-    def test_built_from_settings(self) -> None:
-        """Each value is copied from the matching Settings field."""
-        settings = Settings(_env_file=None)
-        config = SearchConfig.from_settings(settings)
-        assert config == SearchConfig(
-            min_dense_score=settings.min_dense_score,
-            prefetch_limit=settings.prefetch_limit,
-            rrf_k=settings.rrf_k,
-            xref_max_extra=settings.xref_max_extra,
-        )
 
 
 class TestRelevanceGate:
@@ -140,7 +105,7 @@ class TestCrossReferences:
 
     def test_stops_at_the_cap(self) -> None:
         """With a cap of one, only the first referenced section is added."""
-        capped_searcher = make_searcher(xref_max_extra=1)
+        capped_searcher = build_searcher(xref_max_extra=1)
         assert sequence_numbers(capped_searcher.search("tax rates", "item:1A", 1)) == [4, 12]
 
     def test_skips_a_referenced_section_without_relevant_content(self, searcher: Searcher) -> None:

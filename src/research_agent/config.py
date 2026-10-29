@@ -6,7 +6,7 @@ from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_FILE = ".env"
-ENV_FILE_ENCODING = "utf-8"
+TEXT_ENCODING = "utf-8"  # every file the project reads or writes, and text hashed into citation IDs
 ANTHROPIC_KEY_VARIABLE = "ANTHROPIC_API_KEY"
 TAVILY_KEY_VARIABLE = "TAVILY_API_KEY"
 
@@ -14,13 +14,14 @@ TAVILY_KEY_VARIABLE = "TAVILY_API_KEY"
 class Settings(BaseSettings):
     """All runtime configuration. Credentials are optional here so ingestion runs without them."""
 
-    model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding=ENV_FILE_ENCODING, extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding=TEXT_ENCODING, extra="ignore")
 
     # Credentials: required only by the agent, which checks missing_credentials() at startup.
     anthropic_api_key: SecretStr | None = None
     tavily_api_key: SecretStr | None = None
     # Language model
-    llm_model: str = "anthropic:claude-sonnet-5-5"
+    # About 20x cheaper than Sonnet 5.5 and passes the end-to-end tests; LLM_MODEL selects another Claude model.
+    llm_model: str = "anthropic:claude-haiku-5-5"
     llm_timeout_s: float = 60
     # Ingestion
     source_html: Path = Path("data/aapl-20250927.htm")

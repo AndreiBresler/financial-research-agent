@@ -1,7 +1,6 @@
 """Unit tests for the calculator tool (LLD section 7): arithmetic only, stable C IDs, errors returned to the model."""
 
 import hashlib
-import re
 
 import pytest
 from langchain_core.messages import ToolMessage
@@ -15,11 +14,11 @@ from research_agent.tools.calculator import (
     CalculatorArguments,
     make_calculator,
 )
+from tool_support import evidence_of, markers, tool_call
 
 EXPRESSION_ENCODING = "utf-8"
 CALC_ID_PREFIX = "C"
 CALC_ID_HEX_CHARS = 6
-MARKER_PATTERN = re.compile(r"^\[(C[0-9a-f]{6})\] ", re.MULTILINE)
 R_AND_D_SHARE = "34550 / 416161 * 100"
 
 
@@ -31,17 +30,9 @@ def tool() -> BaseTool:
 
 def call(tool: BaseTool, expression: str) -> ToolMessage:
     """Invoke the tool the way the graph's ToolNode does, with a tool call, and return its message."""
-    tool_call = {"type": "tool_call", "id": "call-1", "name": TOOL_NAME, "args": {"expression": expression}}
-    message = tool.invoke(tool_call)
+    message = tool.invoke(tool_call(tool, {"expression": expression}))
     assert isinstance(message, ToolMessage)
     return message
-
-
-def evidence_of(message: ToolMessage) -> list[Evidence]:
-    """Return the Evidence artifact attached to a tool message."""
-    artifact = message.artifact
-    assert isinstance(artifact, list)
-    return artifact
 
 
 def expected_id(expression: str) -> str:
@@ -82,7 +73,7 @@ class TestResults:
         """One Evidence, kind calc, whose source line is the expression and its result."""
         message = call(tool, R_AND_D_SHARE)
         evidence = evidence_of(message)
-        assert MARKER_PATTERN.findall(str(message.content)) == [expected_id(R_AND_D_SHARE)]
+        assert markers(message) == [expected_id(R_AND_D_SHARE)]
         assert evidence == [Evidence(id=expected_id(R_AND_D_SHARE), kind="calc", source=f"{R_AND_D_SHARE} = 8.302075")]
 
     def test_same_expression_keeps_its_id(self, tool: BaseTool) -> None:

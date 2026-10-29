@@ -8,11 +8,12 @@ than mid-question.
 from pathlib import Path
 from string import Template
 
+from research_agent.config import TEXT_ENCODING
+
 SYSTEM_FILE = "system.txt"
 EXAMPLES_FILE = "examples.txt"
 PLANNER_FILE = "planner.txt"
 FINAL_FILE = "final.txt"
-FILE_ENCODING = "utf-8"
 SYSTEM_EXAMPLES_SEPARATOR = "\n\n"
 
 SECTIONS = "sections"
@@ -31,7 +32,7 @@ PLACEHOLDERS_BY_FILE = {
 
 def load_template(path: Path, allowed_placeholders: frozenset[str]) -> Template:
     """Read a prompt file and check it uses only valid, allowed placeholders."""
-    template = Template(path.read_text(encoding=FILE_ENCODING))
+    template = Template(path.read_text(encoding=TEXT_ENCODING))
     if not template.is_valid():
         raise ValueError(f"{path.name}: invalid placeholder; write a literal dollar sign as $$")
     unknown_placeholders = set(template.get_identifiers()) - allowed_placeholders

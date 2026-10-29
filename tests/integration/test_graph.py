@@ -6,12 +6,10 @@ node and tool logging.
 """
 
 import json
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
-import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
@@ -412,12 +410,6 @@ class TestVerification:
 
 class TestLogging:
     """Every node and tool call is logged (LLD section 11)."""
-
-    @pytest.fixture(autouse=True)
-    def reset_structlog(self) -> Iterator[None]:
-        """Undo global logging configuration after each test."""
-        yield
-        structlog.reset_defaults()
 
     async def test_nodes_and_tools_are_logged(self, tmp_path: Path) -> None:
         """A run with the real calculator logs the plan, agent and verify nodes and the calculator call."""

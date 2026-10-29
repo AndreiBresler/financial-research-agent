@@ -10,6 +10,7 @@ pytestmark = pytest.mark.skipif(not REAL_FILING_PATH.exists(), reason=f"{REAL_FI
 ITEM_ID_PREFIX = "item:"
 PART_ID_PREFIX = "part:"
 NOTE_ID_PREFIX = "note:"
+AUDITOR_REPORT = "Report of Independent Registered Public Accounting Firm"
 ITEM_1A_SECTION_ID = "item:1A"
 ITEM_7_SECTION_ID = "item:7"
 ITEM_8_SECTION_ID = "item:8"
@@ -107,6 +108,13 @@ def test_every_block_has_a_page_in_range_and_in_order(real_blocks: list[Block]) 
 def test_every_block_has_a_section(real_blocks: list[Block]) -> None:
     """No block is left without a section."""
     assert all(block.section_id and block.section_path for block in real_blocks)
+
+
+def test_auditor_reports_after_the_notes_belong_to_item_8(real_blocks: list[Block]) -> None:
+    """Both auditor's reports follow Note 13 but are part of Item 8, so they aren't cited as Note 13."""
+    reports = [block for block in real_blocks if block.kind == "heading" and block.text.startswith(AUDITOR_REPORT)]
+    assert len(reports) == 2
+    assert all(block.section_id == "item:8" for block in reports)
 
 
 def test_notes_one_to_thirteen_found_once_inside_item_8(real_blocks: list[Block]) -> None:

@@ -7,9 +7,9 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from research_agent.config import TEXT_ENCODING
 from research_agent.retrieval.search import NotFound, Searcher
 
-FILE_ENCODING = "utf-8"
 DEFAULT_EVAL_K = 5
 NO_CASES_SCORE = 0.0
 
@@ -46,7 +46,7 @@ class EvalReport(BaseModel):
 
 def load_eval_set(path: Path) -> list[EvalCase]:
     """Read one JSON case per line."""
-    content = path.read_text(encoding=FILE_ENCODING)
+    content = path.read_text(encoding=TEXT_ENCODING)
     return [EvalCase.model_validate_json(line) for line in content.splitlines() if line.strip()]
 
 

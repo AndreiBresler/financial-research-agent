@@ -2,6 +2,21 @@
 
 A command-line research agent that answers questions about Apple Inc. from its fiscal 2025 Form 10-K and live web data. For each question it shows a plan, runs tools in parallel, computes every number in code, and cites every claim: a 10-K section and page, a web URL and retrieval date, or a calculation.
 
+## Quick start: run the test queries
+
+```bash
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+cp .env.example .env                 # fill in ANTHROPIC_API_KEY and TAVILY_API_KEY
+python src/ingest.py                 # builds the local 10-K index (first run downloads ~80 MB of models)
+
+python src/run_e2e.py                # end-to-end: the 2 required queries + 4 more, with pass/fail per query
+pytest -m integration                # the same queries as pytest tests (tests/test_queries.py)
+pytest                               # unit and graph tests: no API keys needed, ~7 s
+```
+
+`run_e2e.py` prints each answer with its tools, citations and a pass/fail line; add `--output docs/example-outputs.md` to save the answers, or `--only query_1_document_only` to run one query. The end-to-end runs call the Claude and Tavily APIs and cost tokens. Answers from the latest run: [docs/example-outputs.md](docs/example-outputs.md). Details are under [Running the test queries](#running-the-test-queries).
+
 ## Design
 
 - [High-level design](docs/high-level-design.md): scope, architecture, agent loop, 10-K handling, reliability and security, path to production.
